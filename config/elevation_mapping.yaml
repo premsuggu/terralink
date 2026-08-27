@@ -1,0 +1,43 @@
+terralink_elevation:
+  ros__parameters:
+    # Map geometry
+    resolution: 0.05          # 5 cm/cell
+    map_length: 20.0          # 20m x 20m map
+    min_height: -2.0          # Minimum valid height (m)
+    max_height: 5.0           # Maximum valid height (m)
+
+    # Sensor noise model
+    sensor_noise_factor: 0.05    # noise = factor * (x^2 + y^2 + z^2)
+    min_valid_distance: 0.3      # Ignore points closer than this (m)
+
+    # Outlier rejection (Mahalanobis distance)
+    mahalanobis_thresh: 2.0      # Threshold in standard deviations
+    outlier_variance: 0.01       # Variance added for outliers
+
+    # Drift compensation
+    enable_drift_compensation: true
+    max_drift: 0.10              # Max height correction per update (m)
+    drift_compensation_alpha: 1.0
+    position_noise_thresh: 0.2   # Trigger if pose change > this (m)
+    orientation_noise_thresh: 0.2 # Trigger if rotation > this (rad)
+
+    # Visibility cleanup (ray tracing)
+    enable_visibility_cleanup: true
+    max_ray_length: 10.0         # Max ray trace distance (m)
+    cleanup_step: 0.05           # Validity reduction per ray hit
+    cleanup_cos_thresh: 0.3      # Cosine threshold (ray vs normal)
+
+    # Traversability (analytical)
+    max_slope: 0.35              # ~20 deg max slope
+    max_step: 0.15               # 15 cm max step height
+    max_roughness: 0.05          # 5 cm max roughness (variance)
+
+    # Timing
+    update_pose_fps: 10.0        # Map shift rate (Hz)
+    update_variance_fps: 5.0     # Variance/time update rate (Hz)
+    publish_fps: 2.0             # GridMap publish rate (Hz)
+
+    # Frames
+    map_frame: "map"
+    base_frame: "base_link"
+    sensor_frame: "camera_depth_optical_frame"

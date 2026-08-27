@@ -1,0 +1,73 @@
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz2/Grid
+      Enabled: true
+      Name: Ground Grid
+      Plane: XY
+      Color: 100; 100; 100
+      Line Style: Dotted
+      Cell Size: 1.0
+    
+    - Class: rviz2/TF
+      Enabled: true
+      Name: TF Frames
+      Frame Timeout: 1.0
+      Show Arrows: true
+      Show Axes: true
+      Axis Length: 1.0
+      Axis Radius: 0.05
+    
+    - Class: rviz_default_plugins/PointCloud2
+      Enabled: true
+      Name: Depth Points
+      Topic: /my_uav/camera/depth/points
+      Style: Points
+      Size: 0.03
+      Color Transformer: Z-axis
+      Decay: 0.5
+      Alpha: 0.8
+    
+    - Class: grid_map_rviz_plugin/GridMap
+      Enabled: true
+      Name: Elevation Map
+      Topic: /elevation_mapping_node/elevation_map
+      Layer: elevation
+      Color Scheme: viridis
+      Min Color Value: -1.0
+      Max Color Value: 5.0
+      Alpha: 0.9
+      Plane: XY
+      Height Mode: Height
+      Height Factor: 1.0
+      Use Color From Layer: elevation
+    
+    - Class: grid_map_rviz_plugin/GridMap
+      Enabled: false
+      Name: Variance Map
+      Topic: /elevation_mapping_node/elevation_map
+      Layer: variance
+      Color Scheme: plasma
+      Min Color Value: 0.0
+      Max Color Value: 1.0
+      Alpha: 0.7
+      Plane: XY
+      Height Mode: Flat
+    
+    - Class: grid_map_rviz_plugin/GridMap
+      Enabled: false
+      Name: Traversability Map
+      Topic: /elevation_mapping_node/elevation_map
+      Layer: traversability
+      Color Scheme: autumn
+      Min Color Value: 0.0
+      Max Color Value: 1.0
+      Alpha: 0.8
+      Plane: XY
+      Height Mode: Flat
+  
+  Global Options:
+    Fixed Frame: map
+    Background Color: 48; 48; 48
+    Frame Rate: 30
+    Default Light: true

@@ -1,0 +1,276 @@
+#!/usr/bin/env python3
+"""
+Synthetic PointCloud2 + moving TF publisher for deterministic elevation-mapping bring-up.
+Matches the reference implementation from elevation_mapping_cupy exactly.
+
+Publishes:
+  - TF: map -> base_link (moving in a square trajectory, optional yaw)
+  - PointCloud2: /camera/depth/points in frame base_link
+  - Marker: /uav_marker for UAV visualization in RViz
+
+The pointcloud represents a *static* world (in 'map') transformed into the moving sensor frame.
+This lets you visually verify that the elevation map stays fixed in the world and shifts correctly.
+"""
+
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+from typing import Tuple
+
+import numpy as np
+
+import rclpy
+from rclpy.node import Node
+from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy, QoSDurabilityPolicy, QoSPresetProfiles
+
+from geometry_msgs.msg import TransformStamped, Pose, Point, Quaternion, Vector3
+from sensor_msgs.msg import PointCloud2, PointField
+from visualization_msgs.msg import Marker
+from std_msgs.msg import ColorRGBA
+import tf2_ros
+
+
+def _quat_from_yaw(yaw_rad: float) -> Tuple[float, float, float, float]:
+    """Quaternion (x,y,z,w) for a pure yaw rotation."""
+    half = 0.5 * yaw_rad
+    return (0.0, 0.0, math.sin(half), math.cos(half))
+
+
+def _quat_from_pitch(pitch_rad: float) -> Tuple[float, float, float, float]:
+    """Quaternion (x,y,z,w) for a pure pitch rotation."""
+    half = 0.5 * pitch_rad
+    return (math.sin(half), 0.0, 0.0, math.cos(half))
+
+
+def _quat_from_rpy(roll_rad: float, pitch_rad: float, yaw_rad: float) -> Tuple[float, float, float, float]:
+    """Quaternion (x,y,z,w) for roll, pitch, yaw rotation."""
+    cr = math.cos(0.5 * roll_rad)
+    sr = math.sin(0.5 * roll_rad)
+    cp = math.cos(0.5 * pitch_rad)
+    sp = math.sin(0.5 * pitch_rad)
+    cy = math.cos(0.5 * yaw_rad)
+    sy = math.sin(0.5 * yaw_rad)
+    
+    qx = sr * cp * cy - cr * sp * sy
+    qy = cr * sp * cy + sr * cp * sy
+    qz = cr * cp * sy - sr * sp * cy
+    qw = cr * cp * cy + sr * sp * sy
+    return (qx, qy, qz, qw)
+
+
+def _rotmat_from_rpy(roll_rad: float, pitch_rad: float, yaw_rad: float) -> np.ndarray:
+    """3x3 rotation matrix for roll, pitch, yaw rotation."""
+    cr = math.cos(roll_rad)
+    sr = math.sin(roll_rad)
+    cp = math.cos(pitch_rad)
+    sp = math.sin(pitch_rad)
+    cy = math.cos(yaw_rad)
+    sy = math.sin(yaw_rad)
+    
+    return np.array([
+        [cp * cy, cp * sy * sr - cr * sp, cp * sy * cr + sp * sr * cy],
+        [sp * cy * sr + cr * cp * sy, cp * cp + sr * sp * sy * sr, cp * sy * sr - cr * sp * cy],
+        [-cp * sy * sr + cr * sp * cy, cr * sp * cy + cp * sy * sr, cr * cp * cp - sr * sp * sy]
+    ], dtype=np.float32)
+
+
+def _make_pointcloud2(points_xyz: np.ndarray, frame_id: str, stamp) -> PointCloud2:
+    """Create a PointCloud2 with xyz float32 fields from an (N,3) numpy array."""
+    if points_xyz.ndim != 2 or points_xyz.shape[1] != 3:
+        raise ValueError(f"points_xyz must have shape (N,3), got {points_xyz.shape}")
+    msg = PointCloud2()
+    msg.header.frame_id = frame_id
+    msg.header.stamp = stamp
+    msg.height = 1
+    msg.width = int(points_xyz.shape[0])
+    msg.is_bigendian = False
+    msg.is_dense = True
+    msg.fields = [
+        PointField(name="x", offset=0, datatype=PointField.FLOAT32, count=1),
+        PointField(name="y", offset=4, datatype=PointField.FLOAT32, count=1),
+        PointField(name="z", offset=8, datatype=PointField.FLOAT32, count=1),
+    ]
+    msg.point_step = 12
+    msg.row_step = msg.point_step * msg.width
+    msg.data = np.asarray(points_xyz, dtype=np.float32).tobytes()
+    return msg
+
+
+def _make_uav_marker(trans: np.ndarray, yaw: float, stamp, frame_id: str) -> Marker:
+    """Create a Marker for UAV visualization."""
+    marker = Marker()
+    marker.header.frame_id = frame_id
+    marker.header.stamp = stamp
+    marker.ns = "uav"
+    marker.id = 0
+    marker.type = Marker.CUBE
+    marker.action = Marker.ADD
+    marker.pose = Pose(
+        position=Point(x=float(trans[0]), y=float(trans[1]), z=float(trans[2] + 0.5)),
+        orientation=Quaternion(x=0.0, y=0.0, z=math.sin(yaw * 0.5), w=math.cos(yaw * 0.5))
+    )
+    marker.scale = Vector3(x=0.8, y=0.8, z=0.3)
+    marker.color = ColorRGBA(r=1.0, g=0.0, b=0.0, a=1.0)
+    marker.lifetime = rclpy.duration.Duration(seconds=0.5).to_msg()
+    return marker
+
+
+@dataclass(frozen=True)
+class _Trajectory:
+    speed_mps: float
+    segment_s: float
+    enable_yaw: bool
+    yaw_rate_rps: float
+
+    def pose_at(self, t: float) -> Tuple[np.ndarray, float]:
+        """Deterministic square trajectory in map frame."""
+        seg = self.segment_s
+        v = self.speed_mps
+        loop_s = 4.0 * seg
+        tt = t % loop_s
+        i = int(tt // seg)
+        tau = tt - i * seg
+        d = v * seg
+
+        if i == 0:
+            x, y = v * tau, 0.0
+        elif i == 1:
+            x, y = d, v * tau
+        elif i == 2:
+            x, y = d - v * tau, d
+        else:
+            x, y = 0.0, d - v * tau
+
+        yaw = (self.yaw_rate_rps * t) if self.enable_yaw else 0.0
+        return np.array([x, y, 0.0], dtype=np.float32), float(yaw)
+
+
+class SyntheticPointcloudTfPublisher(Node):
+    def __init__(self):
+        super().__init__("synthetic_pointcloud_tf_publisher")
+
+        self.declare_parameter("pointcloud_topic", "/camera/depth/points")
+        self.declare_parameter("map_frame", "map")
+        self.declare_parameter("base_frame", "base_link")
+        self.declare_parameter("publish_rate_hz", 10.0)
+        self.declare_parameter("max_range_m", 10.0)
+        self.declare_parameter("front_only", False)
+        self.declare_parameter("trajectory_speed_mps", 0.25)
+        self.declare_parameter("trajectory_segment_s", 5.0)
+        self.declare_parameter("enable_yaw", True)
+        self.declare_parameter("yaw_rate_rps", 0.15)
+
+        self._topic = self.get_parameter("pointcloud_topic").value
+        self._map_frame = self.get_parameter("map_frame").value
+        self._base_frame = self.get_parameter("base_frame").value
+        rate_hz = float(self.get_parameter("publish_rate_hz").value)
+        self._max_range = float(self.get_parameter("max_range_m").value)
+        self._front_only = bool(self.get_parameter("front_only").value)
+
+        self._traj = _Trajectory(
+            speed_mps=float(self.get_parameter("trajectory_speed_mps").value),
+            segment_s=float(self.get_parameter("trajectory_segment_s").value),
+            enable_yaw=bool(self.get_parameter("enable_yaw").value),
+            yaw_rate_rps=float(self.get_parameter("yaw_rate_rps").value),
+        )
+
+        self._tf_broadcaster = tf2_ros.TransformBroadcaster(self)
+
+        # Use explicit sensor_data QoS (matches reference implementation exactly)
+        sensor_qos = QoSProfile(
+            reliability=QoSReliabilityPolicy.BEST_EFFORT,
+            durability=QoSDurabilityPolicy.VOLATILE,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=10
+        )
+        self._pc_pub = self.create_publisher(PointCloud2, self._topic, sensor_qos)
+
+        # Marker publisher for UAV visualization
+        self._marker_pub = self.create_publisher(Marker, "/uav_marker", 10)
+
+        self._world_points = self._make_static_world()
+
+        self._t0 = self.get_clock().now()
+        self._timer = self.create_timer(1.0 / rate_hz, self._tick)
+
+        self.get_logger().info(
+            f"Publishing TF '{self._map_frame}' -> '{self._base_frame}' and PointCloud2 '{self._topic}' "
+            f"in frame '{self._base_frame}' at {rate_hz:.1f} Hz."
+        )
+
+    def _make_static_world(self) -> np.ndarray:
+        """Build a static world in map frame: ground plane + Gaussian bump landmark."""
+        # Dense ground plane grid (matching reference: 321x321 at 0.05m)
+        xs = np.linspace(-8.0, 8.0, 321, dtype=np.float32)
+        ys = np.linspace(-8.0, 8.0, 321, dtype=np.float32)
+        X, Y = np.meshgrid(xs, ys, indexing="xy")
+        Z = np.zeros_like(X, dtype=np.float32)
+
+        # Gaussian bump landmark at (2.5, -1.0) - height 0.4m, sigma 0.6m
+        cx, cy = 2.5, -1.0
+        r2 = (X - cx) ** 2 + (Y - cy) ** 2
+        bump = 0.4 * np.exp(-r2 / (2.0 * (0.6**2))).astype(np.float32)
+        Z = Z + bump
+
+        pts = np.stack([X.reshape(-1), Y.reshape(-1), Z.reshape(-1)], axis=1)
+        return pts.astype(np.float32)
+
+    def _publish_tf(self, trans: np.ndarray, yaw: float, stamp_msg) -> None:
+        t = TransformStamped()
+        t.header.stamp = stamp_msg
+        t.header.frame_id = self._map_frame
+        t.child_frame_id = self._base_frame
+        t.transform.translation.x = float(trans[0])
+        t.transform.translation.y = float(trans[1])
+        t.transform.translation.z = float(trans[2])
+        # Camera pointing down: pitch = -90 degrees (pi/2), yaw as per trajectory
+        qx, qy, qz, qw = _quat_from_rpy(0.0, -math.pi/2, yaw)
+        t.transform.rotation.x = qx
+        t.transform.rotation.y = qy
+        t.transform.rotation.z = qz
+        t.transform.rotation.w = qw
+        self._tf_broadcaster.sendTransform(t)
+
+    def _world_to_sensor_points(self, trans: np.ndarray, yaw: float) -> np.ndarray:
+        # Sensor pose in map: p_map = R * p_sensor + t  => p_sensor = R^T * (p_map - t)
+        # Camera pointing down: pitch = -90 degrees
+        R = _rotmat_from_rpy(0.0, -math.pi/2, yaw)
+        pts = self._world_points - trans[None, :]
+        pts_sensor = (R.T @ pts.T).T
+
+        # Range / FOV gating
+        d = np.linalg.norm(pts_sensor[:, :2], axis=1)
+        keep = d <= self._max_range
+        if self._front_only:
+            keep &= pts_sensor[:, 0] > 0.05
+        pts_sensor = pts_sensor[keep]
+        return pts_sensor.astype(np.float32)
+
+    def _tick(self) -> None:
+        now = self.get_clock().now()
+        t = (now - self._t0).nanoseconds * 1e-9
+        trans, yaw = self._traj.pose_at(t)
+        stamp = now.to_msg()
+
+        self._publish_tf(trans, yaw, stamp)
+        self._publish_marker(trans, yaw, stamp)
+        pts_sensor = self._world_to_sensor_points(trans, yaw)
+        msg = _make_pointcloud2(pts_sensor, frame_id=self._base_frame, stamp=stamp)
+        self._pc_pub.publish(msg)
+
+
+def main() -> None:
+    rclpy.init()
+    node = SyntheticPointcloudTfPublisher()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        rclpy.try_shutdown()
+
+
+if __name__ == "__main__":
+    main()

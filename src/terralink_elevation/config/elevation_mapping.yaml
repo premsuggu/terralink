@@ -1,0 +1,47 @@
+/elevation_mapping_node:
+  ros__parameters:
+    # Map configuration
+    resolution: 0.04            # Map resolution (m/cell) - 4cm cells (matching reference)
+    map_length: 8.0             # Map size (meters) - 8x8m area (matching reference)
+    min_height: -2.0            # Minimum valid height (m)
+    max_height: 5.0             # Maximum valid height (m)
+
+    # Sensor noise model
+    sensor_noise_factor: 0.05   # Noise factor: variance = factor * distance^2
+    initial_variance: 1.0       # Initial cell variance (m^2)
+    outlier_variance: 0.01      # Variance added for outliers (m^2)
+
+    # Point validation
+    min_valid_distance: 0.3     # Minimum point distance from sensor (m)
+    max_ray_length: 10.0        # Maximum ray length for validation (m)
+
+    # Mahalanobis outlier rejection
+    mahalanobis_thresh: 2.0     # Threshold for outlier detection (std deviations)
+
+    # Visibility cleanup (ray tracing)
+    enable_visibility_cleanup: true
+    cleanup_step: 0.05          # Fraction of validity to remove per ray pass (0-1]
+    cleanup_cos_thresh: 0.3     # cos(45°) - ray hits wall if |ray·normal| > this
+
+    # Drift compensation
+    enable_drift_compensation: true
+    drift_compensation_alpha: 0.1  # Error correction factor (0-1]
+
+    # Update rates
+    update_pose_fps: 10.0       # Pose update frequency (Hz) - 0 = fixed map
+    update_variance_fps: 5.0    # Variance update frequency (Hz)
+    publish_fps: 2.0            # Map publish frequency (Hz)
+
+    # Frames for UAV simulation (Gazebo)
+    map_frame: "map"              # Global map frame
+    base_frame: "uav_base_link"   # UAV base frame
+    sensor_frame: "depth_camera_optical"  # UAV depth camera frame
+
+    # Point cloud topic (Gazebo UAV depth camera)
+    pointcloud_topic: "/terralink_uav/depth_camera/points"  # Input point cloud topic
+
+    # Publish topic
+    publish_topic: "/elevation_mapping_node/elevation_map"  # Output GridMap topic
+
+    # Internal constants
+    max_variance: 10.0
