@@ -12,13 +12,13 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, SetEnvironmentVariable
 from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import EnvironmentVariable, LaunchConfiguration
+from launch.substitutions import EnvironmentVariable, LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch_ros.actions import Node
 
 
 def generate_launch_description():
     pkg_share = get_package_share_directory('emap')
-    world_file = os.path.join(pkg_share, 'worlds', 'uav_test.world')
+    worlds_dir = os.path.join(pkg_share, 'worlds')
     models_dir = os.path.join(pkg_share, 'models')
     bridge_config = os.path.join(pkg_share, 'config', 'bridge.yaml')
     mapping_config = os.path.join(pkg_share, 'config', 'elevation_mapping.yaml')
@@ -35,10 +35,32 @@ def generate_launch_description():
     )
     enable_mapping = LaunchConfiguration('enable_mapping')
 
-    # model://iris_quad must resolve to <pkg_share>/models/iris_quad
+    # step 7: 'flat' (default, every prior step's exact ground-truth world)
+    # or 'bump' (a real Gaussian-bump terrain - see worlds/bump_test.world
+    # and scripts/generate_bump_heightmap.py) - resolved to a filename with
+    # PythonExpression since, unlike headless above, there's no simple
+    # true/false condition to pick between two whole IncludeLaunchDescriptions
+    # for every world we might add in the future.
+    world_arg = DeclareLaunchArgument(
+        'world', default_value='flat',
+        description="Which world to load: 'flat' (uav_test.world) or 'bump' (bump_test.world)"
+    )
+    world = LaunchConfiguration('world')
+    world_filename = PythonExpression(["'bump_test.world' if '", world, "' == 'bump' else 'uav_test.world'"])
+    world_file = PathJoinSubstitution([worlds_dir, world_filename])
+
+    launch_rviz_arg = DeclareLaunchArgument(
+        'launch_rviz', default_value='false',
+        description='Start rviz2 with this package\'s elevation_mapping.rviz config'
+    )
+    launch_rviz = LaunchConfiguration('launch_rviz')
+
+    # model://iris_quad (and, since step 7, model://heightmaps/...) must
+    # resolve under either <pkg_share>/models or <pkg_share>/worlds.
     resource_path = SetEnvironmentVariable(
         'GZ_SIM_RESOURCE_PATH',
-        [models_dir, os.pathsep, EnvironmentVariable('GZ_SIM_RESOURCE_PATH', default_value='')],
+        [models_dir, os.pathsep, worlds_dir, os.pathsep,
+         EnvironmentVariable('GZ_SIM_RESOURCE_PATH', default_value='')],
     )
 
     # This machine's GPU driver is WSL2's D3D12-translated Mesa OpenGL, which is
@@ -71,12 +93,12 @@ def generate_launch_description():
 
     gz_sim_headless = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(gz_sim_launch),
-        launch_arguments={'gz_args': f'-r -s {world_file}'}.items(),
+        launch_arguments={'gz_args': ['-r -s ', world_file]}.items(),
         condition=IfCondition(headless),
     )
     gz_sim_gui = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(gz_sim_launch),
-        launch_arguments={'gz_args': f'-r {world_file}'}.items(),
+        launch_arguments={'gz_args': ['-r ', world_file]}.items(),
         condition=UnlessCondition(headless),
     )
 
@@ -99,9 +121,21 @@ def generate_launch_description():
         condition=IfCondition(enable_mapping),
     )
 
+    rviz_config = os.path.join(pkg_share, 'rviz', 'elevation_mapping.rviz')
+    rviz = Node(
+        package='rviz2',
+        executable='rviz2',
+        name='rviz2',
+        arguments=['-d', rviz_config],
+        output='screen',
+        condition=IfCondition(launch_rviz),
+    )
+
     return LaunchDescription([
         headless_arg,
         enable_mapping_arg,
+        world_arg,
+        launch_rviz_arg,
         resource_path,
         force_software_gl,
         gz_sim_headless,
@@ -109,4 +143,5 @@ def generate_launch_description():
         bridge,
         camera_static_tf,
         mapping_node,
+        rviz,
     ])

@@ -19,3 +19,8 @@ elevation_mapping_node:
     # --- step 6: this node's own wiring ---
     map_frame: "iris_quad/odom"   # root of the TF tree (step 2) the map lives in
     publish_rate_hz: 2.0           # how often to publish the GridMap message
+
+    # --- step 7: analytical traversability (see emap/traversability.py) ---
+    max_slope: 0.35       # rise/run above which a cell is lethal (~20 degrees)
+    max_step: 0.15        # meters of height jump in a 3x3 neighborhood above which a cell is lethal
+    max_roughness: 0.05   # variance above which a cell is lethal

@@ -29,6 +29,7 @@ import tf2_ros
 
 from emap.elevation_map import ElevationMap, LAYER_INDEX
 from emap.fusion import fuse_points
+from emap.traversability import compute_traversability
 from emap.utils.gridmap_utils import encode_layer_to_multiarray
 from emap.utils.tf_utils import transform_points, translation_of
 
@@ -54,6 +55,9 @@ class ElevationMappingNode(Node):
         self.declare_parameter("map_frame", "iris_quad/odom")
         self.declare_parameter("base_frame", "iris_quad/base_link")
         self.declare_parameter("publish_rate_hz", 2.0)
+        self.declare_parameter("max_slope", 0.35)
+        self.declare_parameter("max_step", 0.15)
+        self.declare_parameter("max_roughness", 0.05)
 
         self._map_frame = self.get_parameter("map_frame").value
         self._base_frame = self.get_parameter("base_frame").value
@@ -61,6 +65,9 @@ class ElevationMappingNode(Node):
         self._mahalanobis_thresh = float(self.get_parameter("mahalanobis_thresh").value)
         self._outlier_variance = float(self.get_parameter("outlier_variance").value)
         self._min_valid_distance = float(self.get_parameter("min_valid_distance").value)
+        self._max_slope = float(self.get_parameter("max_slope").value)
+        self._max_step = float(self.get_parameter("max_step").value)
+        self._max_roughness = float(self.get_parameter("max_roughness").value)
 
         self._map = ElevationMap(
             resolution=self.get_parameter("resolution").value,
@@ -174,6 +181,30 @@ class ElevationMappingNode(Node):
             outlier_variance=self._outlier_variance,
             min_valid_distance=self._min_valid_distance,
         )
+
+        # step 7: recompute traversability from the map's just-updated
+        # elevation/variance. Done here (once per point cloud, right after
+        # fusion) rather than on its own timer - traversability only ever
+        # needs to reflect the map's current elevation/variance, so there's
+        # no reason to recompute it on any different schedule than "whenever
+        # that data just changed".
+        is_valid = self._map.layer("is_valid") > 0.5
+        traversability = compute_traversability(
+            self._map.layer("elevation"),
+            self._map.layer("variance"),
+            is_valid,
+            self._map.resolution,
+            self._max_slope,
+            self._max_step,
+            self._max_roughness,
+        )
+        # Only ever overwrite cells that have actually been observed -
+        # compute_traversability itself already returns EASY for every
+        # is_valid=False cell (see its own docstring), but writing that
+        # back into every cell here would still be redundant/harmless; the
+        # explicit mask keeps this line self-documenting about the rule
+        # every other layer already follows.
+        self._map.layer("traversability")[is_valid] = traversability[is_valid]
 
     def _publish_map(self) -> None:
         """Build and publish one `GridMap` message from the map's current

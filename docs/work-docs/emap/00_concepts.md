@@ -141,6 +141,12 @@ Section 8 introduced the idea of a 2.5D grid with multiple named layers (`elevat
 
 The one real gotcha (found and worked through in `step06_ros_node_integration.md`): each layer's data isn't just "the numbers in the obvious order." `GridMap` encodes each layer as a `Float32MultiArray` using a specific **column-major** layout (walk down each column fully before moving to the next), because that's the exact convention the receiving side (`grid_map_ros`, and therefore RViz) expects. Encoding it the "obvious" row-by-row way produces a message that's still technically valid ROS (right type, right number of floats) but decodes into a transposed/scrambled-looking map on the other end - a mistake that's easy to make and easy to miss without checking against something that actually decodes it correctly.
 
+## 12. Traversability: from "how high" to "how easy to drive over" (added in step 7)
+
+Everything through step 6 answers "how high is the ground here?" Traversability answers a different, more directly useful question for actually planning a route: "would it be a problem to drive/fly over this cell?" It's still stored as a per-cell number (Section 8's 2.5D idea), but it's *derived* from the map's other layers rather than measured directly by any sensor.
+
+Three intuitive properties matter for that judgment, and step 7 computes each from things the map already tracks: how **steep** the ground is at a cell (a slope, computed from how much neighboring cells' heights differ), whether there's a sharp **ledge** nearby (a big height jump within a small neighborhood, which a smooth slope calculation can under-react to), and how **rough**/inconsistent the ground has measured out to be (reusing the cell's own `variance` from Section 9 - though see step07's docs for an honest caveat about that specific choice). Combining simple, named checks like these - rather than a single opaque score - keeps every decision explainable: a cell is flagged risky *because* it's steep, or *because* there's a ledge, not for a reason nobody can point to.
+
 ## Glossary
 
 | Term | Meaning |
@@ -173,3 +179,5 @@ The one real gotcha (found and worked through in `step06_ros_node_integration.md
 | Outlier | A measurement too inconsistent with an existing confident belief to be trusted |
 | Map shifting / re-centering | Sliding a fixed-size grid's contents so it keeps following the robot |
 | `GridMap` message | The standard ROS 2 message for a multi-layer 2.5D grid map, geometry + all layers in one message |
+| Traversability | A per-cell score for how easy/safe that terrain is to drive over |
+| Heightmap (SDF) | A grayscale image used to build real 3D terrain in a Gazebo world |
