@@ -48,11 +48,20 @@ Visualization Manager:
         {}
       Update Interval: 0
       Value: true
-    - Class: rviz_default_plugins/PointCloud2
+    # Raw sensor points, kept mainly as "is data actually arriving right
+    # now" confirmation rather than a primary view - translucent (Alpha)
+    # and colored by height (AxisColor/Z) instead of a flat opaque color,
+    # so a dense cloud reads as a soft height-tinted haze instead of a
+    # solid sheet that blocks the GridMap display sitting behind it.
+    - Alpha: 0.35
+      Autocompute Value Bounds: true
+      Axis: Z
+      Class: rviz_default_plugins/PointCloud2
+      Color Transformer: AxisColor
       Enabled: true
       Name: Camera PointCloud
       Selectable: true
-      Size (m): 0.02
+      Size (m): 0.03
       Style: Points
       Topic:
         Depth: 5
@@ -61,15 +70,18 @@ Visualization Manager:
         Reliability Policy: Best Effort
         Value: /camera/points
       Value: true
-    # Height comes from the 'elevation' layer (so the terrain's actual shape
-    # is visible), color comes from 'traversability' (step 7) - one display
-    # showing both what the ground looks like and how easy it is to drive
-    # over, rather than needing to flip between two separate views.
+    # Primary view: colored by 'elevation' itself (continuous meters), not
+    # 'traversability' (only 3 discrete values - 0 / 0.3 / 1.0 - which is
+    # why coloring by it produced hard, banded rings instead of a real
+    # heatmap). Autocompute Intensity Bounds means the color scale always
+    # stretches to whatever elevation range is CURRENTLY in the map, so
+    # relief stays visually readable whether the map holds a 1.5m bump or
+    # is still mostly flat.
     - Alpha: 1
-      Autocompute Intensity Bounds: false
+      Autocompute Intensity Bounds: true
       Class: grid_map_rviz_plugin/GridMap
       Color: 200; 200; 200
-      Color Layer: traversability
+      Color Layer: elevation
       Color Transformer: IntensityLayer
       Enabled: true
       Height Layer: elevation
@@ -77,10 +89,41 @@ Visualization Manager:
       History Length: 1
       Invert Rainbow: true
       Max Color: 255; 255; 255
+      Max Intensity: 10
+      Min Color: 0; 0; 0
+      Min Intensity: 0
+      Name: ElevationMap (height)
+      Show Grid Lines: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /elevation_map
+      Use Rainbow: true
+      Value: true
+      Visualization Type: Flat Surface
+    # Step 7's traversability, kept available but OFF by default so it
+    # doesn't fight with the height-based heatmap above for attention -
+    # tick this on in the Displays panel when you specifically want to see
+    # lethal/difficult/easy classification instead of raw height.
+    - Alpha: 1
+      Autocompute Intensity Bounds: false
+      Class: grid_map_rviz_plugin/GridMap
+      Color: 200; 200; 200
+      Color Layer: traversability
+      Color Transformer: IntensityLayer
+      Enabled: false
+      Height Layer: elevation
+      Height Transformer: GridMapLayer
+      History Length: 1
+      Invert Rainbow: false
+      Max Color: 255; 255; 255
       Max Intensity: 1.0
       Min Color: 200; 0; 0
       Min Intensity: 0.0
-      Name: ElevationMap
+      Name: ElevationMap (traversability)
       Show Grid Lines: true
       Topic:
         Depth: 5
