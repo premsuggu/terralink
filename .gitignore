@@ -61,3 +61,17 @@ secrets.json
 
 *log*
 install/
+
+# ROS 2 / colcon workspace build artifacts
+build/
+install/
+log/
+COLCON_IGNORE
+
+# ROS bag recordings (large binary, regenerate as needed, don't commit)
+rosbag2_*/
+*.db3
+*.mcap
+
+# Generated test outputs (created by running tests, not source)
+tests/**/results/

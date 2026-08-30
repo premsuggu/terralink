@@ -1,0 +1,134 @@
+# emap Concepts: The Absolute Basics
+
+This file explains the foundational ideas every `emap` step builds on. Read this once, first. Each `stepNN_*.md` file then only explains what's *new* in that step, and links back here for anything foundational.
+
+If a word is unfamiliar anywhere else in `docs/work-docs/emap/`, it's probably explained here or in the glossary at the bottom.
+
+---
+
+## 1. Why do we simulate at all?
+
+We're building software that will eventually fly a real drone. Testing new code directly on a real, expensive, crash-prone drone is slow and risky. Instead, we test in a **simulator**: a program that pretends to be the real world closely enough that code written against it also works on the real thing (with some tuning).
+
+A simulator needs to fake two things convincingly:
+- **Physics** — gravity, collisions, how a spinning propeller actually pushes a drone upward.
+- **Sensors** — what a camera or GPS *would* see/measure if the drone were really there.
+
+We use **Gazebo** (specifically "Ignition Gazebo Fortress", a newer rewrite of the older "Gazebo Classic") as our simulator.
+
+## 2. What is ROS 2, in one paragraph?
+
+ROS 2 (Robot Operating System 2) is not an operating system — it's a messaging framework for robotics. A robot's software is split into many small independent programs called **nodes** (e.g., "the camera driver", "the flight controller", "the mapping algorithm"). Nodes talk to each other by publishing and subscribing to **topics** — named channels carrying a stream of typed messages. A node doesn't need to know who's listening; it just publishes `Twist` messages on `/cmd_vel` and anyone interested subscribes to `/cmd_vel`. This is the same pattern radio broadcast uses: a station broadcasts, and any radio tuned to that frequency receives it, with neither side needing to know about the other.
+
+A **launch file** is just a script that starts a group of nodes (and other programs) together with the right settings, instead of you typing several commands into several terminals by hand. Ours are Python files under `launch/`.
+
+## 3. Gazebo and ROS 2 are two separate programs
+
+This is the single most important thing to understand about everything in `src/emap/`:
+
+**Gazebo and ROS 2 do not know about each other by default.** Gazebo has its own internal messaging system (called "Ignition Transport", with its own topics like `/model/iris_quad/odometry`) that is completely separate from ROS 2's topics (like `/odom`). They look similar (both are "publish a named, typed message") but they are two different systems that happen to use a similar idea.
+
+To connect them, we run a translator program in between: `ros_gz_bridge`. You tell it "take everything published on Gazebo topic X and republish it as ROS 2 topic Y (and/or vice versa)", and it copies messages across, converting between the two systems' message formats. We call this **the bridge**. Step 1 introduces our bridge config (`config/bridge.yaml`) — see `step01_uav_gazebo_deployment.md` for the full walkthrough.
+
+```
+ ┌────────────┐   Ignition topics    ┌───────────────┐   ROS 2 topics   ┌────────────┐
+ │   Gazebo    │ ───────────────────▶│  ros_gz_bridge │─────────────────▶│  ROS 2 node │
+ │ (simulator) │◀─────────────────── │  (translator)  │◀─────────────────│ (our code)  │
+ └────────────┘                      └───────────────┘                  └────────────┘
+```
+
+## 4. SDF: how you describe *what exists* in a simulation
+
+**SDF** (Simulation Description Format) is an XML file format Gazebo uses to describe everything in a simulated world: the ground, the lighting, and every robot/object, down to their exact shape, mass, and how their parts connect. Think of it as a blueprint document, not a program — it doesn't run anything by itself; Gazebo reads it and builds the scene.
+
+Two kinds of SDF file you'll see in `src/emap/`:
+- A **world file** (`worlds/*.world`) — describes an entire scene: lighting, ground, physics settings, and which robot models are placed where.
+- A **model file** (`models/<name>/model.sdf`) — describes one reusable object/robot, so it can be placed into any world via `<include>`.
+
+### 4.1 The vocabulary, with a minimal example
+
+Every physical object in SDF is a `<model>` made of one or more `<link>`s connected by `<joint>`s.
+
+- **`<link>`** — one rigid, solid piece (nothing bends within a link). A simple box has one link; a robot arm has several links, one per segment.
+- **`<joint>`** — connects two links and says how they're allowed to move relative to each other: `fixed` (bolted together, never moves), `revolute` (rotates around one axis, like a hinge or a wheel/propeller), `prismatic` (slides), etc.
+- **`<inertial>`** — the link's mass and *how that mass is spread out* (its "moment of inertia", roughly: how hard it is to start/stop it spinning). Needed for physics to compute how forces move it.
+- **`<collision>`** — the invisible shape the physics engine uses to detect this link hitting other things. Usually a simple shape (box, cylinder) for speed.
+- **`<visual>`** — the shape actually drawn on screen. Can be a detailed 3D mesh even if the collision shape is a plain box — the physics doesn't care what it looks like, only what it collides as.
+- **`<pose>`** — a position + orientation (`x y z roll pitch yaw`), used everywhere to say "this thing is located/oriented here, relative to its parent."
+
+A tiny complete example — a link that's just a floating box, with no joints:
+
+```xml
+<model name="simple_box">
+  <link name="box_link">
+    <inertial>
+      <mass>1.0</mass>
+      <inertia><ixx>0.1</ixx><iyy>0.1</iyy><izz>0.1</izz>
+                <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia>
+    </inertial>
+    <collision name="col"><geometry><box><size>1 1 1</size></box></geometry></collision>
+    <visual name="vis"><geometry><box><size>1 1 1</size></box></geometry></visual>
+  </link>
+</model>
+```
+
+That's it — one link, a box-shaped collision and visual, and inertia numbers so physics can simulate it falling/bouncing. Our UAV model (`step01`) is the same idea repeated 5 times (1 body + 4 rotors) and connected with `revolute` joints.
+
+### 4.2 Plugins: giving a model *behavior*
+
+By itself, SDF only describes static shape and mass — it has no concept of "motor" or "sensor" or "spin this". A **`<plugin>`** is a small piece of compiled code, loaded by Gazebo at run time, that's given access to one part of the simulation and does something active with it every simulated time step — e.g. "read a commanded speed and push this joint accordingly" or "render a camera image every frame". Plugins are how anything *dynamic* happens in Gazebo; the SDF model itself stays passive geometry. `step01` covers the specific plugins that make our drone fly.
+
+## 5. `colcon` and packages, briefly
+
+ROS 2 code is organized into **packages** — self-contained folders with a `package.xml` (metadata) that group related nodes, launch files, and config. `colcon build` compiles/installs all packages it finds under `src/`. `colcon build --packages-select emap` builds only the `emap` package. After building, you must `source install/local_setup.bash` in your terminal so ROS 2 knows where to find what was just built — this is required after every `colcon build`, every new terminal.
+
+---
+
+## 6. Coordinate frames and TF (added in step 2)
+
+A **coordinate frame** is just an origin point plus three perpendicular axes (X, Y, Z) that you measure positions relative to. "The camera is at (0, 0, -0.08)" is meaningless on its own — you have to say *relative to what*. Relative to the drone's body? Relative to the world? Relative to yesterday's starting point? Every measurement in robotics is relative to *some* frame, and a robot typically has many frames at once: one for the world, one for its own body, one for each sensor, sometimes one for each part of an arm.
+
+Why not just use one single frame for everything? Because different things are naturally easiest to describe in different frames, and some of those frames move relative to each other. The camera's position *relative to the drone's body* never changes (it's bolted on) — that's easy and constant. The drone's position *relative to the world* changes constantly as it flies — that's a separate, moving relationship. Trying to force everything into one frame means recomputing the camera's absolute world position by hand every time the drone moves, for every sensor, by hand, in every piece of code that needs it. Instead, robotics software builds a **tree of frames**, each one only describing its relationship to its *immediate parent*:
+
+```
+iris_quad/odom  (≈ the fixed world origin)
+  └── iris_quad/base_link            (moves: the drone's live position/orientation)
+        └── iris_quad/camera_link/rgbd_camera   (fixed: bolted to the body, never changes)
+```
+
+Each arrow in that tree is one **transform**: a translation (x, y, z) plus a rotation, saying "here's where the child frame is, and how it's rotated, relative to its parent." Critically, each transform only needs to know about its *one direct neighbor* — nothing needs to know the whole tree. If you want to know "where is a camera measurement in the world," you don't need any single piece of code that understands the whole chain by hand; you just ask a library to walk the tree and combine the transforms for you. That library is **TF** (`tf2` in ROS 2): every node that knows a transform *broadcasts* it (onto the special topics `/tf` for transforms that change over time, or `/tf_static` for transforms that never change, like a bolted-on sensor), and any node that needs to convert between two frames asks `tf2`'s `Buffer`/`TransformListener` to look it up and do the combined math, however many links apart the two frames are.
+
+This is exactly the tree `step02` builds: a moving `iris_quad/odom → iris_quad/base_link` transform (from the drone's live flight, published because it changes every instant) and a fixed `iris_quad/base_link → iris_quad/camera_link/rgbd_camera` transform (published once, because a bolted-on mount never moves relative to the body it's bolted to).
+
+## 7. Point clouds (added in step 2)
+
+A **point cloud** is simply a list of 3D points — `(x, y, z)` for each point a depth sensor measured, all expressed in that sensor's own coordinate frame (Section 6). In ROS 2 this is the `sensor_msgs/msg/PointCloud2` message type: conceptually a big list of points, though the message itself stores them as a flat binary blob (for speed — a real cloud can be hundreds of thousands of points, and re-parsing text for each one would be far too slow) alongside a description of how to decode that blob (which bytes are `x`, which are `y`, etc.) and a `frame_id` saying which coordinate frame every point in it is measured in. A depth/RGB-D camera like ours produces one of these every time it takes a "picture" — one 3D point per pixel, at the distance that pixel's ray hit something solid.
+
+One easy point of confusion, worth flagging early: it's tempting to assume a camera's local axes are always "X = right, Y = down, Z = forward (the direction it's looking)" — this is a real, common convention (called the *optical frame* convention) used by many camera drivers. But it is a *convention*, not a law of physics, and step02 found that Ignition's simulated RGB-D sensor does **not** follow it — its point cloud instead has the viewing/depth direction along local **X**. The lesson isn't "memorize which axis is which" — it's: **when in doubt about a sensor's axis convention, don't guess or assume — publish real data and look at the actual numbers** (step02 does exactly this, and documents what it found).
+
+## Glossary
+
+| Term | Meaning |
+|---|---|
+| Node | One running ROS 2 program, usually doing one job |
+| Topic | A named, typed stream that nodes publish to / subscribe from |
+| Launch file | A script that starts several nodes/programs together |
+| Gazebo / `gz sim` | The physics + sensor simulator we use |
+| Ignition Transport | Gazebo's own internal messaging system (separate from ROS 2 topics) |
+| Bridge (`ros_gz_bridge`) | Translator program that copies messages between Gazebo topics and ROS 2 topics |
+| SDF | XML format describing simulated worlds and models |
+| Model | One object/robot in SDF, made of links + joints |
+| Link | One rigid piece of a model |
+| Joint | Connection between two links, defining how they can move relative to each other |
+| Inertial | A link's mass + how that mass is distributed (affects how forces spin/move it) |
+| Collision | The (usually simplified) shape physics uses for contact detection |
+| Visual | The shape actually rendered on screen |
+| Pose | Position + orientation (`x y z roll pitch yaw`) |
+| Plugin | Compiled code loaded into a simulation to make something behave dynamically |
+| Package | A folder of related ROS 2 code with a `package.xml` |
+| `colcon build` | The command that compiles/installs ROS 2 packages |
+| Coordinate frame | An origin + 3 axes that positions are measured relative to |
+| Transform | A translation + rotation describing one frame relative to its parent |
+| TF / `tf2` | ROS 2's system for broadcasting and looking up transforms between frames, published on `/tf` (moving) and `/tf_static` (fixed) |
+| Point cloud / `PointCloud2` | A list of 3D points a depth sensor measured, in that sensor's own frame |
+| Optical frame convention | A common (not universal) camera-axis convention: Z=forward, X=right, Y=down |

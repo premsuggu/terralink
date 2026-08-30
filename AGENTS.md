@@ -14,13 +14,16 @@
 
 ---
 
-## NEW: From-Scratch Implementation (TerraLink Custom)
+## ACTIVE: From-Scratch Implementation (`emap`)
 
-**Goal**: Build our own elevation mapping package from scratch, referencing but NOT modifying the Direction 1 reference code.
+**Goal**: Build our own elevation mapping package from scratch, referencing but NOT modifying the Direction 1 reference code (`src/d1/`) or the earlier from-scratch attempt (`src/terralink_elevation/`, now legacy/reference-only).
+
+**Environment note**: this machine has Ignition Gazebo Fortress (`gz sim`) + `ros_gz_sim`/`ros_gz_bridge` for ROS 2 Humble, NOT Gazebo Classic (`gazebo_ros`) - `terralink_elevation` and `src/d3` depend on Classic and won't run here as-is. `emap` targets Ignition/`ros_gz`. Also: `fuel.gazebosim.org` (Ignition Fuel) connects but stalls on downloads in this sandbox - don't add runtime/setup dependencies on it; vendor external assets locally instead (GitHub raw is reliable).
 
 | Component | Package | Location | Status |
 |-----------|---------|----------|--------|
-| **Elevation Mapping** | `terralink_elevation` | `src/terralink_elevation/` | **Planned - 12 steps** |
+| **Elevation Mapping** | `emap` | `src/emap/` | **Active - step 1 (UAV in Gazebo) complete, see `docs/work-docs/emap/`** |
+| **Elevation Mapping (legacy)** | `terralink_elevation` | `src/terralink_elevation/` | Reference only, not under active development |
 | **Semantic Vision** | `terralink_semantic` | `src/terralink_semantic/` | Not started |
 | **Navigation Core** | `terralink_nav` | `src/terralink_nav/` | Not started |
 

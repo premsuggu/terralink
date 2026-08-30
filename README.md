@@ -12,7 +12,28 @@ ROS 2 Humble heterogeneous robotics framework for unstructured environments (con
 
 ---
 
-## NEW: Direction 1 Custom - From-Scratch Elevation Mapping
+## ACTIVE: `emap` - From-Scratch Elevation Mapping (Ignition Gazebo)
+
+**Package**: `emap` (`src/emap/`) - the current, active from-scratch elevation-mapping rebuild. Supersedes `terralink_elevation` below as the line of active work (that package is kept as a reference, untouched).
+
+**Why a rebuild**: this environment has Ignition Gazebo Fortress (`gz sim`) + `ros_gz_sim`/`ros_gz_bridge`, not Gazebo Classic (`gazebo_ros`) which `terralink_elevation` and `src/d3` depend on. `emap` targets the stack that's actually installed here.
+
+**Status**: Step 1 complete - a physically-simulated, ROS 2-controllable quadrotor (`iris_quad`, geometry from the open-source PX4 Iris model, flown with Ignition's native multicopter plugins) spawns and flies in Gazebo.
+
+```bash
+source /opt/ros/humble/setup.bash
+source install/local_setup.bash
+ros2 launch emap uav_sim.launch.py          # headless by default; headless:=false for GUI
+ros2 topic pub --once /cmd_vel geometry_msgs/msg/Twist "{linear: {z: 0.6}}"   # climb
+```
+
+Roadmap and per-step write-ups: `docs/work-docs/emap/`.
+
+---
+
+## LEGACY: Direction 1 Custom - From-Scratch Elevation Mapping (terralink_elevation)
+
+Kept as reference only - no longer under active development, see `emap` above.
 
 **Package**: `terralink_elevation` (`src/terralink_elevation/`) - Our from-scratch implementation referencing but NOT modifying the reference implementation.
 
