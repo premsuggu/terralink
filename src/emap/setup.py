@@ -35,4 +35,9 @@ setup(
     description='TerraLink emap - from-scratch UAV elevation mapping, rebuilt on Ignition Gazebo Fortress + ros_gz',
     license='MIT',
     tests_require=['pytest'],
+    entry_points={
+        'console_scripts': [
+            'elevation_mapping_node = emap.elevation_mapping_node:main',
+        ],
+    },
 )

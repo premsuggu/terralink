@@ -119,3 +119,152 @@ class TestCoordinateTransform:
         cols = np.array([0, 0, 5, 9, 3])
         expected = np.array([False, True, True, True, False])
         assert np.array_equal(in_bounds(rows, cols, cell_n=10), expected)
+
+
+@pytest.fixture
+def small_map():
+    """A 10x10 map at 1m/cell - deliberately tiny and round-numbered so a
+    human can trace exactly which cell a value should end up in by hand,
+    which is the whole point of the map-shifting tests below (they exist to
+    catch an axis-swap/direction bug, and that's much easier to verify with
+    "does the 7 end up here or there" than with a 100x100 grid of floats).
+    """
+    return ElevationMap(resolution=1.0, length=10.0, initial_variance=10.0)
+
+
+def _mark_every_cell_uniquely(emap):
+    """Fill `elevation` with `row*100 + col` (so every cell's original
+    location can be read straight off its value) and mark every cell
+    `is_valid` - so after a move, any cell showing `is_valid == 0` is
+    unambiguously one `move_to` just blanked as newly-exposed.
+    """
+    rows, cols = np.meshgrid(np.arange(emap.cell_n), np.arange(emap.cell_n), indexing="ij")
+    emap.layer("elevation")[:] = rows * 100 + cols
+    emap.layer("is_valid")[:] = 1.0
+
+
+class TestMapShifting:
+    def test_pure_x_shift_moves_content_along_columns_not_rows(self, small_map):
+        # This is the test that would fail immediately if rows/cols ever got
+        # swapped: moving purely in X must only ever change which COLUMN a
+        # world point's data lives in, never its row.
+        _mark_every_cell_uniquely(small_map)
+
+        small_map.move_to(1.0, 0.0)  # +1m in x, 0 in y
+
+        # The point at world (0,0) - the OLD center, originally cell (5,5)
+        # with value 505 - must still be findable, now one column further
+        # from the new center (since the new center moved past it in +x).
+        row, col = small_map.world_to_grid(0.0, 0.0)
+        assert (row, col) == (5, 4)
+        assert small_map.layer("elevation")[row, col] == 505.0
+
+        # The new center (1, 0) must hold whatever used to be one cell
+        # further east under the OLD center - value 506.
+        row, col = small_map.world_to_grid(1.0, 0.0)
+        assert (row, col) == (5, 5)
+        assert small_map.layer("elevation")[row, col] == 506.0
+
+    def test_pure_y_shift_moves_content_along_rows_not_columns(self, small_map):
+        # The mirror image of the test above - moving purely in Y must only
+        # change ROW, never column. Between this test and the previous one,
+        # a transposed row/col bug cannot pass both.
+        _mark_every_cell_uniquely(small_map)
+
+        small_map.move_to(0.0, 1.0)  # +1m in y, 0 in x
+
+        row, col = small_map.world_to_grid(0.0, 0.0)
+        assert (row, col) == (4, 5)
+        assert small_map.layer("elevation")[row, col] == 505.0
+
+        row, col = small_map.world_to_grid(0.0, 1.0)
+        assert (row, col) == (5, 5)
+        assert small_map.layer("elevation")[row, col] == 605.0
+
+    def test_positive_x_shift_blanks_the_far_column_not_the_near_one(self, small_map):
+        # Moving in +x means the map now covers ground further east than
+        # before - the genuinely NEW (never-before-seen) strip is the far
+        # (high-index) column, not the near one. This is the exact "which
+        # side gets blanked" detail that's easy to get backwards (the sign
+        # of the roll shift is the NEGATIVE of the direction moved) - see
+        # the comment above this logic in elevation_map.py.
+        _mark_every_cell_uniquely(small_map)
+        small_map.move_to(1.0, 0.0)
+
+        is_valid = small_map.layer("is_valid")
+        assert np.all(is_valid[:, -1] == 0.0), "the far column must be the freshly-blanked one"
+        assert np.all(is_valid[:, :-1] == 1.0), "every other column should still be the old data"
+        # And the freshly-blanked column must actually be reset to the same
+        # defaults reset() uses elsewhere, not just is_valid=0.
+        assert np.all(small_map.layer("elevation")[:, -1] == 0.0)
+        assert np.all(small_map.layer("variance")[:, -1] == small_map.initial_variance)
+        assert np.all(small_map.layer("traversability")[:, -1] == 1.0)
+
+    def test_negative_x_shift_blanks_the_near_column(self, small_map):
+        # The opposite direction: moving in -x exposes new ground on the
+        # LOW-index (near/west) side instead.
+        _mark_every_cell_uniquely(small_map)
+        small_map.move_to(-1.0, 0.0)
+
+        is_valid = small_map.layer("is_valid")
+        assert np.all(is_valid[:, 0] == 0.0)
+        assert np.all(is_valid[:, 1:] == 1.0)
+
+    def test_diagonal_shift_blanks_an_l_shaped_region_including_the_corner(self, small_map):
+        # Moving in both x and y at once must blank BOTH a row-band and a
+        # column-band - including the corner cell where they overlap, which
+        # is exactly the case a naive "only handle one axis" implementation
+        # would get wrong.
+        _mark_every_cell_uniquely(small_map)
+        small_map.move_to(2.0, -3.0)  # +2 cells in x, -3 cells in y
+
+        is_valid = small_map.layer("is_valid")
+        # -3 in y blanks the first 3 rows (see the pure-y-shift direction
+        # logic - moving in -y exposes new ground at the LOW row end).
+        assert np.all(is_valid[:3, :] == 0.0)
+        # +2 in x blanks the last 2 columns.
+        assert np.all(is_valid[:, -2:] == 0.0)
+        # Everything NOT in either blanked band must be untouched old data.
+        assert np.all(is_valid[3:, :-2] == 1.0)
+
+    def test_submeter_move_snaps_center_to_the_nearest_whole_cell(self, small_map):
+        # 0.3m and -0.2m both round to "0 whole cells" at 1m resolution -
+        # the center must not move at all, not creep by the raw sub-cell amount.
+        small_map.move_to(0.3, -0.2)
+        assert small_map.center_x == pytest.approx(0.0)
+        assert small_map.center_y == pytest.approx(0.0)
+
+        # 0.6m rounds UP to 1 whole cell.
+        small_map.move_to(0.6, 0.0)
+        assert small_map.center_x == pytest.approx(1.0)
+
+    def test_moving_to_the_current_center_is_a_true_no_op(self, small_map):
+        _mark_every_cell_uniquely(small_map)
+        elevation_before = small_map.layer("elevation").copy()
+
+        small_map.move_to(0.0, 0.0)  # already there
+
+        assert np.array_equal(small_map.layer("elevation"), elevation_before)
+
+    def test_shift_larger_than_the_map_falls_back_to_a_full_reset(self, small_map):
+        # A jump of 100m on a 10m-wide map means literally nothing from the
+        # old map is still in view - naive edge-slicing wouldn't blank
+        # everything correctly here (see the comment in elevation_map.py),
+        # so this must produce exactly what a brand new map looks like.
+        _mark_every_cell_uniquely(small_map)
+
+        small_map.move_to(100.0, 100.0)
+
+        fresh = ElevationMap(resolution=1.0, length=10.0, initial_variance=10.0)
+        assert np.array_equal(small_map.layer("elevation"), fresh.layer("elevation"))
+        assert np.array_equal(small_map.layer("is_valid"), fresh.layer("is_valid"))
+
+    def test_coordinate_transform_is_still_correct_after_moving(self, small_map):
+        # The same "does the center map to the middle of the array" check
+        # step 3 ran at construction time (TestCoordinateTransform in this
+        # file) - now proven to still hold true after the map has actually
+        # moved, tying this step's correctness to the same public API a
+        # real caller (step 6's ROS node) will actually use.
+        small_map.move_to(3.0, -4.0)
+        row, col = small_map.world_to_grid(3.0, -4.0)
+        assert (row, col) == (small_map.cell_n // 2, small_map.cell_n // 2)

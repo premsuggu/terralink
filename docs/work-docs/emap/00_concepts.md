@@ -129,6 +129,18 @@ Look at what happens in the extremes: if the new measurement's variance is tiny 
 
 One more piece: what if a measurement doesn't just disagree a little, but is wildly, suspiciously different from a belief we're already fairly confident about (e.g. a stray bad depth reading, or a bird flying through the camera's view)? Blindly fusing that in would corrupt a cell that many good measurements had already pinned down. So before fusing, every measurement is checked against how surprising it would be given the current belief; if it's too surprising, it's treated as an **outlier** — not fused into the height at all, though the cell's variance is still nudged up a little (something unexpected happened here, so maybe we should be a bit less sure than we were). `step04_bayesian_fusion.md` covers exactly how "too surprising" is decided, and works through the same formulas above with real numbers.
 
+## 10. Why the map has to "follow" the robot (added in step 5)
+
+Section 8 already decided the map is a fixed-size grid, not one that grows forever. But a UAV can fly a very long way from wherever it started — if the grid never moved, either it would have to be enormous (covering every place the UAV might ever go, mostly wasted memory) or it would quickly cover somewhere else entirely as the UAV flies away from its starting point, leaving the actual ground beneath the UAV unmapped.
+
+The standard solution, used by both reference implementations in this project, is to keep the grid a fixed size but **periodically re-center it on the robot** — every so often, "forget" the patch of ground that's now far behind and "start fresh" on the patch that's newly nearby, while keeping whatever's still within the (fixed) window. Concretely, that means physically sliding the array's contents over so that cells still within view land back in the right position relative to the new center, and marking whatever edge just came into view as "never observed" (since the array literally has no old data for a place it's never covered before). `step05_map_shifting.md` covers exactly how this is done and, more importantly, exactly how it's proven correct — this is the single easiest place in the whole codebase to accidentally swap "which way is which" (row vs. column, or which edge is genuinely new vs. which edge should be left alone), so it gets its own dedicated, carefully-checked implementation rather than being folded into some other step.
+
+## 11. GridMap: publishing a multi-layer map as one message (added in step 6)
+
+Section 8 introduced the idea of a 2.5D grid with multiple named layers (`elevation`, `variance`, ...). `grid_map_msgs/GridMap` is the standard ROS 2 message type for sending exactly that kind of thing over a topic: one message carries the map's geometry (resolution, size, where it's centered - `info`) plus a list of layer names (`layers`) and, for each one, its actual data (`data`, one entry per layer). Anything that understands this message type - RViz's grid map plugin, or any other node - can then reconstruct the full multi-layer grid on the receiving end without needing separate messages (and separate synchronization) for every layer.
+
+The one real gotcha (found and worked through in `step06_ros_node_integration.md`): each layer's data isn't just "the numbers in the obvious order." `GridMap` encodes each layer as a `Float32MultiArray` using a specific **column-major** layout (walk down each column fully before moving to the next), because that's the exact convention the receiving side (`grid_map_ros`, and therefore RViz) expects. Encoding it the "obvious" row-by-row way produces a message that's still technically valid ROS (right type, right number of floats) but decodes into a transposed/scrambled-looking map on the other end - a mistake that's easy to make and easy to miss without checking against something that actually decodes it correctly.
+
 ## Glossary
 
 | Term | Meaning |
@@ -159,3 +171,5 @@ One more piece: what if a measurement doesn't just disagree a little, but is wil
 | Variance | A statistical measure of uncertainty - how much a value might be off from the truth |
 | Bayesian fusion | Combining two uncertain beliefs by weighting each by how much it's trusted |
 | Outlier | A measurement too inconsistent with an existing confident belief to be trusted |
+| Map shifting / re-centering | Sliding a fixed-size grid's contents so it keeps following the robot |
+| `GridMap` message | The standard ROS 2 message for a multi-layer 2.5D grid map, geometry + all layers in one message |

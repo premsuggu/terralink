@@ -21,12 +21,19 @@ def generate_launch_description():
     world_file = os.path.join(pkg_share, 'worlds', 'uav_test.world')
     models_dir = os.path.join(pkg_share, 'models')
     bridge_config = os.path.join(pkg_share, 'config', 'bridge.yaml')
+    mapping_config = os.path.join(pkg_share, 'config', 'elevation_mapping.yaml')
 
     headless_arg = DeclareLaunchArgument(
         'headless', default_value='true',
         description='Run gz sim server-only (no GUI window)'
     )
     headless = LaunchConfiguration('headless')
+
+    enable_mapping_arg = DeclareLaunchArgument(
+        'enable_mapping', default_value='true',
+        description='Start the step-6 elevation_mapping_node alongside the simulation'
+    )
+    enable_mapping = LaunchConfiguration('enable_mapping')
 
     # model://iris_quad must resolve to <pkg_share>/models/iris_quad
     resource_path = SetEnvironmentVariable(
@@ -81,12 +88,25 @@ def generate_launch_description():
         output='screen',
     )
 
+    # step 6: the live mapping node - name matches elevation_mapping.yaml's
+    # top-level key so its ros__parameters actually get applied.
+    mapping_node = Node(
+        package='emap',
+        executable='elevation_mapping_node',
+        name='elevation_mapping_node',
+        parameters=[mapping_config],
+        output='screen',
+        condition=IfCondition(enable_mapping),
+    )
+
     return LaunchDescription([
         headless_arg,
+        enable_mapping_arg,
         resource_path,
         force_software_gl,
         gz_sim_headless,
         gz_sim_gui,
         bridge,
         camera_static_tf,
+        mapping_node,
     ])

@@ -1,0 +1,21 @@
+# Parameters for emap's elevation_mapping_node.
+#
+# Grouped by which step of the roadmap introduced them (see
+# docs/work-docs/emap/IMPLEMENTATION_PLAN.md) so it's obvious where to go
+# read the full from-scratch explanation of any one value.
+elevation_mapping_node:
+  ros__parameters:
+    # --- step 3: the map grid itself ---
+    resolution: 0.1          # meters per cell
+    length: 20.0             # meters per side of the (square) map
+    initial_variance: 10.0   # placeholder uncertainty for a never-observed cell
+
+    # --- step 4: Bayesian fusion ---
+    sensor_noise_factor: 0.01   # measurement variance = this * range^2
+    mahalanobis_thresh: 2.0     # how many "std devs" of disagreement before a point is an outlier
+    outlier_variance: 1.0       # how much an outlier bumps a cell's variance by
+    min_valid_distance: 0.2     # points closer than this to the sensor are dropped
+
+    # --- step 6: this node's own wiring ---
+    map_frame: "iris_quad/odom"   # root of the TF tree (step 2) the map lives in
+    publish_rate_hz: 2.0           # how often to publish the GridMap message
