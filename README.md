@@ -18,16 +18,35 @@ ROS 2 Humble heterogeneous robotics framework for unstructured environments (con
 
 **Why a rebuild**: this environment has Ignition Gazebo Fortress (`gz sim`) + `ros_gz_sim`/`ros_gz_bridge`, not Gazebo Classic (`gazebo_ros`) which `terralink_elevation` and `src/d3` depend on. `emap` targets the stack that's actually installed here.
 
-**Status**: Step 1 complete - a physically-simulated, ROS 2-controllable quadrotor (`iris_quad`, geometry from the open-source PX4 Iris model, flown with Ignition's native multicopter plugins) spawns and flies in Gazebo.
+**Status**: Steps 1-4 complete - a physically-simulated, ROS 2-controllable quadrotor (`iris_quad`, geometry from the open-source PX4 Iris model, flown with Ignition's native multicopter plugins) with a downward depth camera + verified TF tree, and a CPU Bayesian-fusion elevation-mapping core (not yet wired into a live ROS node).
 
 ```bash
 source /opt/ros/humble/setup.bash
 source install/local_setup.bash
 ros2 launch emap uav_sim.launch.py          # headless by default; headless:=false for GUI
-ros2 topic pub --once /cmd_vel geometry_msgs/msg/Twist "{linear: {z: 0.6}}"   # climb
 ```
 
 Roadmap and per-step write-ups: `docs/work-docs/emap/`.
+
+### Controlling the UAV
+
+**The drone does not fly on its own.** It's velocity-controlled: Gazebo's `MulticopterVelocityControl` plugin (see `step01_uav_gazebo_deployment.md`) constantly asks "what body-frame velocity was I just told to fly at?" and holds that - with nothing publishing to `/cmd_vel`, the commanded velocity is zero, so it just sits on the ground under gravity. This is normal for a velocity-controlled vehicle (a real drone does the same with no stick input) - it's not a bug, and nothing else in the simulation is supposed to move it by itself.
+
+To actually fly it, publish `geometry_msgs/msg/Twist` messages to `/cmd_vel` (linear x/y/z in m/s, angular z for yaw rate, all in the drone's own body frame):
+
+```bash
+# One-shot: climb, then hold that velocity until told otherwise
+ros2 topic pub --once /cmd_vel geometry_msgs/msg/Twist "{linear: {z: 0.6}}"
+
+# Hover (zero velocity) once at altitude
+ros2 topic pub --once /cmd_vel geometry_msgs/msg/Twist "{linear: {z: 0.0}}"
+
+# Continuous manual control from the keyboard (ros-humble-teleop-twist-keyboard,
+# already installed) - a terminal UI that publishes /cmd_vel as you press keys
+ros2 run teleop_twist_keyboard teleop_twist_keyboard
+```
+
+**Is this critical right now? No.** Manual `/cmd_vel` commands are enough to test the sensor/TF/mapping pipeline (exactly how steps 1-2 were verified) - none of the mapping algorithm work (steps 3-4, pure CPU code) depends on the drone moving by itself at all. Real autonomy - flying a survey pattern, or a planner publishing `/cmd_vel` on the UAV's behalf - is a separate, later concern once the mapping pipeline itself is wired into a live node and there's an actual map worth flying to complete.
 
 ---
 

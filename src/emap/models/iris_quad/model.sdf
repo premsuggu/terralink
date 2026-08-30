@@ -42,10 +42,13 @@
             <uri>model://iris_quad/meshes/iris.stl</uri>
           </mesh>
         </geometry>
+        <!-- A dark "gunmetal" slate-blue rather than flat grey - the specular
+             highlight is bumped up too so it catches the scene light instead
+             of looking matte/flat from every angle. -->
         <material>
-          <ambient>0.15 0.15 0.15 1</ambient>
-          <diffuse>0.2 0.2 0.2 1</diffuse>
-          <specular>0.3 0.3 0.3 1</specular>
+          <ambient>0.10 0.11 0.14 1</ambient>
+          <diffuse>0.20 0.22 0.28 1</diffuse>
+          <specular>0.45 0.45 0.5 1</specular>
         </material>
       </visual>
       <gravity>true</gravity>
@@ -91,9 +94,14 @@
             <uri>model://iris_quad/meshes/iris_prop_ccw.dae</uri>
           </mesh>
         </geometry>
+        <!-- Front rotors marked bright orange - a real-drone convention so a
+             pilot (or, here, anyone watching the sim) can tell orientation
+             (front vs. back) at a glance, independent of the CW/CCW spin
+             pairing used for the flight physics in the world file. -->
         <material>
-          <ambient>0.1 0.1 0.6 1</ambient>
-          <diffuse>0.15 0.15 0.8 1</diffuse>
+          <ambient>0.55 0.18 0.03 1</ambient>
+          <diffuse>0.95 0.35 0.05 1</diffuse>
+          <specular>0.3 0.3 0.3 1</specular>
         </material>
       </visual>
       <gravity>true</gravity>
@@ -155,9 +163,12 @@
             <uri>model://iris_quad/meshes/iris_prop_ccw.dae</uri>
           </mesh>
         </geometry>
+        <!-- Back rotors kept matte black, contrasting with the orange front
+             pair above - the same "know which way it's facing" idea. -->
         <material>
-          <ambient>0.15 0.15 0.15 1</ambient>
-          <diffuse>0.2 0.2 0.2 1</diffuse>
+          <ambient>0.03 0.03 0.03 1</ambient>
+          <diffuse>0.06 0.06 0.06 1</diffuse>
+          <specular>0.2 0.2 0.2 1</specular>
         </material>
       </visual>
       <gravity>true</gravity>
@@ -219,9 +230,14 @@
             <uri>model://iris_quad/meshes/iris_prop_cw.dae</uri>
           </mesh>
         </geometry>
+        <!-- Front rotors marked bright orange - a real-drone convention so a
+             pilot (or, here, anyone watching the sim) can tell orientation
+             (front vs. back) at a glance, independent of the CW/CCW spin
+             pairing used for the flight physics in the world file. -->
         <material>
-          <ambient>0.1 0.1 0.6 1</ambient>
-          <diffuse>0.15 0.15 0.8 1</diffuse>
+          <ambient>0.55 0.18 0.03 1</ambient>
+          <diffuse>0.95 0.35 0.05 1</diffuse>
+          <specular>0.3 0.3 0.3 1</specular>
         </material>
       </visual>
       <gravity>true</gravity>
@@ -283,9 +299,12 @@
             <uri>model://iris_quad/meshes/iris_prop_cw.dae</uri>
           </mesh>
         </geometry>
+        <!-- Back rotors kept matte black, contrasting with the orange front
+             pair above - the same "know which way it's facing" idea. -->
         <material>
-          <ambient>0.15 0.15 0.15 1</ambient>
-          <diffuse>0.2 0.2 0.2 1</diffuse>
+          <ambient>0.03 0.03 0.03 1</ambient>
+          <diffuse>0.06 0.06 0.06 1</diffuse>
+          <specular>0.2 0.2 0.2 1</specular>
         </material>
       </visual>
       <gravity>true</gravity>
@@ -339,9 +358,12 @@
             <size>0.03 0.03 0.03</size>
           </box>
         </geometry>
+        <!-- Near-black, slightly glossy - reads as a small camera/lens
+             housing rather than a plain grey box. -->
         <material>
-          <ambient>0.05 0.05 0.05 1</ambient>
-          <diffuse>0.1 0.1 0.1 1</diffuse>
+          <ambient>0.02 0.02 0.02 1</ambient>
+          <diffuse>0.05 0.05 0.05 1</diffuse>
+          <specular>0.5 0.5 0.5 1</specular>
         </material>
       </visual>
       <sensor name="rgbd_camera" type="rgbd_camera">

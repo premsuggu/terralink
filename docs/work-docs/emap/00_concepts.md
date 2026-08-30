@@ -106,6 +106,29 @@ A **point cloud** is simply a list of 3D points — `(x, y, z)` for each point a
 
 One easy point of confusion, worth flagging early: it's tempting to assume a camera's local axes are always "X = right, Y = down, Z = forward (the direction it's looking)" — this is a real, common convention (called the *optical frame* convention) used by many camera drivers. But it is a *convention*, not a law of physics, and step02 found that Ignition's simulated RGB-D sensor does **not** follow it — its point cloud instead has the viewing/depth direction along local **X**. The lesson isn't "memorize which axis is which" — it's: **when in doubt about a sensor's axis convention, don't guess or assume — publish real data and look at the actual numbers** (step02 does exactly this, and documents what it found).
 
+## 8. 2.5D height grids and uncertainty (added in step 3)
+
+An elevation map's job is to answer "how high is the ground at this (x, y) location?" for every location in some area. The most literal way to store that would be a full 3D grid: split the world into tiny cubes ("voxels") and mark which ones are solid ground. That works, but it's wasteful for this project's purpose — we don't care about overhangs, caves, or anything below the surface, only "what's the height of the ground here," which is a *single number* per (x, y) location, not a whole column of voxels. Storing one height value per (x, y) cell instead of a full 3D volume is dramatically cheaper in both memory and computation, and is exactly what "2.5D" means: a 2D grid (rows/columns of cells), each carrying one extra number (height) — "2D plus a bit," not full 3D.
+
+Concretely, that means the map is one 2D array (`elevation` in the code) where `elevation[row, col]` is the terrain height at whatever real-world (x, y) that cell corresponds to (Section 4's coordinate-frame idea, applied to a grid instead of a robot part). Converting between "a real (x, y) position" and "a (row, col) index into that array" is ordinary arithmetic (scale by the cell size, shift so the map's center lands in the middle of the array) — `step03` walks through exactly that conversion with real numbers.
+
+**Why also track a `variance` layer, not just `elevation`?** Because no sensor measurement is perfect — a depth camera's estimate of "the ground is 3.57m below me" always carries some amount of noise/uncertainty. If we only stored the latest height, a single noisy outlier measurement could wildly corrupt a cell that many earlier good measurements had already pinned down accurately. Instead, every cell keeps a second number, its **variance** — a statistical measure of *how uncertain* that cell's height estimate currently is (small variance = "we're pretty confident," large variance = "we barely have any idea yet"). A brand new cell starts with a deliberately huge variance ("no idea"); step 4 (Bayesian fusion) will show exactly how a real measurement's own uncertainty gets combined with a cell's existing variance so that confident, repeated measurements win out over noise, and a lone bad reading can't ruin an otherwise well-observed cell.
+
+## 9. Combining two uncertain beliefs (added in step 4)
+
+Imagine you have two thermometers reading the same room. One is a cheap thermometer you don't trust much (it's often off by a couple of degrees). The other is a lab-grade thermometer you trust closely (usually accurate to a tenth of a degree). If they disagree slightly, you wouldn't just average them 50/50 — you'd lean heavily toward the trustworthy one. If you had to combine them into a single best guess, the natural rule is: **weight each reading by how much you trust it, and let the more trustworthy one pull the combined answer closer to itself.**
+
+That's exactly the situation every elevation-map cell is in, every time a new sensor measurement arrives for it. The cell already has a belief (its current `elevation` and `variance` from Section 8 — variance is "how much we trust this current number"). A new measurement arrives with its own height value and its own variance (a sensor is noisier for far-away points, so a measurement's variance depends on how far away it was taken from). Combining two independent, uncertain beliefs about the same true value has a clean mathematical answer:
+
+```
+combined_height   = (belief_height * new_variance + new_height * belief_variance) / (belief_variance + new_variance)
+combined_variance = (belief_variance * new_variance) / (belief_variance + new_variance)
+```
+
+Look at what happens in the extremes: if the new measurement's variance is tiny (very trustworthy) compared to the belief's variance, `combined_height` ends up very close to `new_height` — exactly the "trust the lab thermometer" intuition. And `combined_variance` is always smaller than *either* input's variance — combining two independent observations can only make you more confident, never less (this is why a map cell's uncertainty shrinks as more measurements land on it, which `step04`'s tests confirm numerically).
+
+One more piece: what if a measurement doesn't just disagree a little, but is wildly, suspiciously different from a belief we're already fairly confident about (e.g. a stray bad depth reading, or a bird flying through the camera's view)? Blindly fusing that in would corrupt a cell that many good measurements had already pinned down. So before fusing, every measurement is checked against how surprising it would be given the current belief; if it's too surprising, it's treated as an **outlier** — not fused into the height at all, though the cell's variance is still nudged up a little (something unexpected happened here, so maybe we should be a bit less sure than we were). `step04_bayesian_fusion.md` covers exactly how "too surprising" is decided, and works through the same formulas above with real numbers.
+
 ## Glossary
 
 | Term | Meaning |
@@ -132,3 +155,7 @@ One easy point of confusion, worth flagging early: it's tempting to assume a cam
 | TF / `tf2` | ROS 2's system for broadcasting and looking up transforms between frames, published on `/tf` (moving) and `/tf_static` (fixed) |
 | Point cloud / `PointCloud2` | A list of 3D points a depth sensor measured, in that sensor's own frame |
 | Optical frame convention | A common (not universal) camera-axis convention: Z=forward, X=right, Y=down |
+| 2.5D | A 2D grid where each cell also stores one height value, instead of a full 3D voxel grid |
+| Variance | A statistical measure of uncertainty - how much a value might be off from the truth |
+| Bayesian fusion | Combining two uncertain beliefs by weighting each by how much it's trusted |
+| Outlier | A measurement too inconsistent with an existing confident belief to be trusted |

@@ -20,8 +20,8 @@ Environment facts that shape every step below:
 
 1. **UAV in Gazebo** ✅ — a physically-simulated, controllable quadrotor spawns in Ignition Gazebo and is flyable from ROS 2. See `step01_uav_gazebo_deployment.md`.
 2. **Depth sensor + point cloud pipeline** ✅ — a downward-facing depth/RGB-D camera is mounted on the UAV, its `PointCloud2` reaches ROS 2, and a verified TF tree (`iris_quad/odom → base_link → camera_link/rgbd_camera`) lets real points be transformed to the world frame and land at the true ground height. See `step02_depth_camera_pointcloud.md`.
-3. **Elevation map core data structure (CPU)** — multi-layer NumPy grid (elevation, variance, is_valid, traversability), coordinate-transform helpers, unit tested in isolation (no ROS, no Gazebo) — same discipline as `terralink_elevation`'s step 3.
-4. **Bayesian fusion (CPU)** — point cloud → height/variance update per cell, outlier rejection, unit tested against hand-computed expected values.
+3. **Elevation map core data structure (CPU)** ✅ — multi-layer NumPy grid (elevation, variance, is_valid, traversability), vectorized coordinate-transform helpers, unit tested in isolation (no ROS, no Gazebo). See `step03_elevation_map_data_structure.md`.
+4. **Bayesian fusion (CPU)** ✅ — point cloud → height/variance update per cell (variance-weighted combination of prior belief + new measurement), outlier rejection, unit tested against hand-computed expected values. See `step04_bayesian_fusion.md`.
 5. **Map shifting (UAV-centric)** — recenter the grid as the UAV moves, unit tested for the axis-swap/padding pitfalls `terralink_elevation` documented running into.
 6. **ROS 2 node integration** — wire steps 2-5 into a live node subscribing to the point cloud, publishing a `grid_map_msgs/GridMap`, verified in the Gazebo world from step 1/2.
 7. **Traversability + visualization** — slope/step/roughness classification layer, RViz config, verified visually against a known test terrain (e.g. a Gaussian bump world, reused/adapted from the old `worlds/gaussian_bump.world` pattern).
