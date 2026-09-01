@@ -688,20 +688,21 @@ ros2 run rviz2 rviz2 -d $(ros2 pkg prefix terralink_elevation)/share/terralink_e
 ## Important insutructions for agents
 - Make sure the codebase is well maintained and follows best practices interms of modularity, readability, documentation, and performance.
 - ALWAYS propose a plan for implementation before starting any task and get approval before proceeding.
-- Include all the technical details in the implementation plan, including any dependencies, libraries, or frameworks that will be used. You can also include important code snippets or pseudocode to illustrate your approach.
+- INCLUDE all the technical details in the implementation plan, including any dependencies, libraries, or frameworks that will be used. You can also include important code snippets or pseudocode to illustrate your approach.
 - Every time a task is completed, ensure that the code is properly tested with unit tests and integration tests.
 - NEVER create test or debug related files in root directory. All test files should be placed in the tests/ directory.
 - NEVER push code to git unless explicitly instructed to do so.
-- After every task, update the documentation to reflect any changes made to the codebase.
+- After every task, UPDATE the documentation to reflect any changes made to the codebase.
 - Provide high-level documentation and detailed explanations (including technical details) separately in the docs/ in a very modular way.
 - Provide references to code snippets in the documentation wherever necessary.
 - NEVER assume anything and always ask for clarifications if any requirements or details are unclear.
 - ALWAYS use best practices for code quality, including but not limited to code reviews, static analysis, and adherence to coding standards.
 - Provide detailed EXPLANATIONS for all the concepts required to understand the codebase in form of documentation from SCRATCH and in a simple way such that beginners can also understand the concepts properly.
 - For concept explanations use `docs/learning/` and explain the detailed explanation for all concepts here including any pre-requisite concepts required to understand the codebase. 
-- Use coding examples wherever necessary to explain the concepts in a simple way.
+- USE coding examples wherever necessary to explain the concepts in a simple way.
 - If you lack priviliges to perform any task, inform the user and provide a detailed explanation of the steps the user to perform to complete the task.
 - When asked to debug or solve any issue related to simulation and incase you need to run the simulation run it headlessly and use the output logs for further analysis. Do not run any simulation in GUI mode unless neccessary. But at the same time u need to make sure things are working perfectly for simulation as well.
+- NEVER install unecessary packages or libraries in the system, unless explicitly mentioned. If by any chance you have installed it then remove it immediately and inform the user about it. 
 
 ---
  

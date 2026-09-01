@@ -153,6 +153,24 @@ Step 5 gave the map a fixed size that re-centers on the robot ("rolling window")
 
 The standard answer (this is genuinely how real navigation stacks like Nav2 are built, not a one-off idea for this project) is to keep **both**, side by side, fed by the same sensor data: a small **local** map that keeps re-centering (for fast, nearby reactions) and a larger **global** map that never re-centers and never forgets (for planning across the whole known area). Nothing about the underlying `ElevationMap`/fusion/traversability code needs to be different between the two - the only difference is whether something ever calls `move_to` on a given map instance. A map that's never told to move just keeps quietly accumulating everything it's shown, forever, at a fixed spot - exactly what a persistent record of "everywhere I've ever looked" needs to do.
 
+## 14. GPU acceleration: same math, different processor (added in step 9)
+
+A CPU is good at doing many DIFFERENT things quickly, one after another. A GPU is built the opposite way: thousands of small, simple processing units that are only good at doing the SAME operation many times over, all at once. That mismatch usually makes a GPU useless for most code - but `fuse_points` (Section 9) does exactly the same handful of arithmetic steps to every point in a batch, completely independently of every other point. That's precisely the shape of work a GPU is good at, so running the identical algorithm there instead can make it faster.
+
+CuPy is a library that makes this almost free to try: it re-implements NumPy's own functions (`zeros`, `add.at`, elementwise math) so that they run on the GPU instead, with nearly the same code. `fuse_points_gpu` (step 9) is literally `fuse_points` with `cp.` in place of `np.` in the handful of places the fusion math happens - the algorithm itself, and everything it was already unit-tested against, is unchanged.
+
+One real cost this introduces: a GPU has its OWN separate memory, so data has to be copied there and back (host↔device transfer) - that copy isn't free, and for a small enough batch of data it can cost more time than the GPU saves. This project measured that honestly rather than assuming "GPU = faster" (see step09_gpu_acceleration.md for the actual numbers) instead of just turning it on and hoping.
+
+## 15. Pose drift and how to correct it (added in step 10)
+
+A real robot never knows its own exact position - it only has an ESTIMATE, built by continuously integrating noisy sensor readings (wheel rotation, IMU acceleration) over time. Every tiny error in those readings adds up the longer the robot runs, so the estimate slowly wanders away from the truth - this is called **drift**. It's not a malfunction; it's an unavoidable property of estimating position by accumulation instead of measuring it directly.
+
+Why this matters for a map: every point this project fuses is placed using the CURRENT pose estimate (Section 6's TF lookups). If that estimate has drifted - say the robot believes it's 30cm higher than it truly is - then every point measured right now gets stamped 30cm higher than it should be, even though the sensor itself measured correctly. Fly over the same hill before and after some drift has accumulated, and the map doesn't get one clean hill - it gets two overlapping, slightly-offset copies of it.
+
+The fix used here treats the MAP as the source of truth once it's confident about something: a cell that's been fused many times and agrees with itself has low `variance` (Section 9) - the map trusts it. If a fresh batch of points lands on those same trusted cells and reads a systematically different height, the simplest, most likely explanation isn't "the ground changed" - it's "the pose estimate is currently wrong", and that disagreement can be used to correct the pose going forward, without ever overwriting the trusted cell itself. This project only corrects the VERTICAL (Z) part of that drift, since "expected height at this (x, y)" is exactly what the map already stores - correcting horizontal (X/Y) drift properly needs matching the whole shape of a new scan against the map to find a 2D offset (scan-matching), a materially bigger algorithm this project didn't need to build to demonstrate the core idea.
+
+The correction is also applied gradually (a small fraction of each new estimate, not the whole thing at once) rather than snapping instantly - a single noisy measurement shouldn't be allowed to yank the pose around; nudging it a little every time evidence comes in converges to the right answer over several updates while staying robust to any one bad reading.
+
 ## Glossary
 
 | Term | Meaning |
@@ -188,4 +206,10 @@ The standard answer (this is genuinely how real navigation stacks like Nav2 are 
 | Traversability | A per-cell score for how easy/safe that terrain is to drive over |
 | Heightmap (SDF) | A grayscale image used to build real 3D terrain in a Gazebo world |
 | Local map | A small map that re-centers on the robot - fast, nearby, forgets far-away ground |
+| Global map | A larger map that never re-centers - persistent memory of everywhere ever seen |
+| GPU / CUDA kernel | A separate processor built for doing the same operation on many data points at once; a "kernel" is one such operation |
+| CuPy | A library mirroring NumPy's API but running the same array operations on the GPU |
+| Host / device (transfer) | "Host" = the CPU's memory, "device" = the GPU's own separate memory - moving data between them isn't free |
+| Pose drift | The slow accumulation of small errors in a robot's estimate of its own position over time |
+| Drift compensation | Detecting and correcting pose drift by comparing new measurements against already-confident map data |
 | Global map | A large map that never re-centers - persistent memory of everywhere ever seen |

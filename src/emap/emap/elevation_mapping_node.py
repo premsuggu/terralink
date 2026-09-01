@@ -27,8 +27,22 @@ by the exact same sensor data every callback; neither `ElevationMap`,
 `fuse_points`, nor `compute_traversability` needed to change at all to
 support this - they already work correctly whether or not `move_to` is ever
 called on a given instance.
+
+Two more pieces wired in here, both optional and both off-by-default-safe:
+  - step 9 (`emap/fusion_gpu.py`): `fuse_points`'s exact algorithm, run on
+    the GPU via CuPy. Resolved ONCE at startup (`self._use_gpu_fusion`) from
+    the `use_gpu_fusion` parameter AND whether cupy/a GPU actually imported
+    successfully - a checkout with neither degrades to the CPU path
+    automatically, with one log line explaining why.
+  - step 10 (`emap/drift.py`): vertical-only pose-drift correction. Gazebo's
+    TF is ground truth and never drifts on its own, so `synthetic_drift_z_rate`
+    (default 0.0, inert) exists purely to inject a fake, slowly-growing Z
+    offset so the correction has something real to correct and can be
+    watched working live - see docs/work-docs/emap/step10_drift_compensation.md.
 """
 from __future__ import annotations
+
+import time
 
 import numpy as np
 import rclpy
@@ -45,8 +59,21 @@ import tf2_ros
 from emap.elevation_map import ElevationMap, LAYER_INDEX
 from emap.fusion import fuse_points
 from emap.traversability import compute_traversability
+from emap.drift import estimate_vertical_drift
 from emap.utils.gridmap_utils import encode_layer_to_multiarray
 from emap.utils.tf_utils import transform_points, translation_of
+
+# cupy is optional (step 9): a checkout without a GPU/CUDA toolkit must
+# still run the node fine on the CPU path, so this import is never allowed
+# to be fatal - `_GPU_AVAILABLE` is what `use_gpu_fusion` actually gets
+# resolved against at startup, below.
+try:
+    from emap.fusion_gpu import fuse_points_gpu
+
+    _GPU_AVAILABLE = True
+except ImportError:
+    fuse_points_gpu = None
+    _GPU_AVAILABLE = False
 
 
 class ElevationMappingNode(Node):
@@ -74,6 +101,13 @@ class ElevationMappingNode(Node):
         self.declare_parameter("max_slope", 0.35)
         self.declare_parameter("max_step", 0.15)
         self.declare_parameter("max_roughness", 0.05)
+        self.declare_parameter("use_gpu_fusion", True)
+        self.declare_parameter("enable_drift_compensation", True)
+        self.declare_parameter("drift_confidence_variance_thresh", 0.05)
+        self.declare_parameter("drift_min_matches", 30)
+        self.declare_parameter("drift_correction_gain", 0.3)
+        self.declare_parameter("drift_max_reasonable_residual", 1.0)
+        self.declare_parameter("synthetic_drift_z_rate", 0.0)
 
         self._map_frame = self.get_parameter("map_frame").value
         self._base_frame = self.get_parameter("base_frame").value
@@ -84,6 +118,35 @@ class ElevationMappingNode(Node):
         self._max_slope = float(self.get_parameter("max_slope").value)
         self._max_step = float(self.get_parameter("max_step").value)
         self._max_roughness = float(self.get_parameter("max_roughness").value)
+
+        # step 9: resolve ONCE at startup (not re-checked every callback)
+        # whether the GPU fusion path actually applies - both the parameter
+        # asking for it AND cupy/a GPU actually being importable have to be
+        # true, so a checkout with no GPU degrades to the CPU path cleanly.
+        want_gpu = bool(self.get_parameter("use_gpu_fusion").value)
+        self._use_gpu_fusion = want_gpu and _GPU_AVAILABLE
+        if want_gpu and not _GPU_AVAILABLE:
+            self.get_logger().warn(
+                "use_gpu_fusion=true but cupy/a GPU isn't available here - "
+                "falling back to the CPU fusion path."
+            )
+
+        # step 10: drift compensation parameters + running state. See
+        # emap/drift.py for the estimation math and the module docstring
+        # above for why only the GLOBAL map is used as the reference and
+        # both maps receive the correction.
+        self._enable_drift_compensation = bool(self.get_parameter("enable_drift_compensation").value)
+        self._drift_confidence_variance_thresh = float(
+            self.get_parameter("drift_confidence_variance_thresh").value
+        )
+        self._drift_min_matches = int(self.get_parameter("drift_min_matches").value)
+        self._drift_correction_gain = float(self.get_parameter("drift_correction_gain").value)
+        self._drift_max_reasonable_residual = float(
+            self.get_parameter("drift_max_reasonable_residual").value
+        )
+        self._synthetic_drift_z_rate = float(self.get_parameter("synthetic_drift_z_rate").value)
+        self._z_bias_estimate = 0.0
+        self._start_time = time.monotonic()
 
         resolution = self.get_parameter("resolution").value
         initial_variance = self.get_parameter("initial_variance").value
@@ -136,7 +199,9 @@ class ElevationMappingNode(Node):
         self.get_logger().info(
             f"elevation_mapping_node: local {self._local_map.cell_n}x{self._local_map.cell_n} "
             f"+ global {self._global_map.cell_n}x{self._global_map.cell_n} cells @ "
-            f"{self._local_map.resolution} m/cell, map_frame='{self._map_frame}'"
+            f"{self._local_map.resolution} m/cell, map_frame='{self._map_frame}', "
+            f"fusion={'GPU' if self._use_gpu_fusion else 'CPU'}, "
+            f"drift_compensation={'on' if self._enable_drift_compensation else 'off'}"
         )
 
     def _lookup_transform(self, target_frame: str, source_frame: str, stamp):
@@ -208,6 +273,51 @@ class ElevationMappingNode(Node):
         base_position = translation_of(base_tf)
         sensor_origin = translation_of(camera_tf)
 
+        # step 10 (FAKE, for visibility only): Gazebo's TF is ground truth
+        # and never drifts on its own, so with synthetic_drift_z_rate > 0 we
+        # inject an artificial, slowly-growing Z offset here - simulating
+        # the kind of slow barometric/IMU bias a real robot would
+        # accumulate - purely so the correction below has something real to
+        # correct and can be watched actually working live. At the default
+        # of 0.0 this line is a no-op and changes nothing.
+        if self._synthetic_drift_z_rate != 0.0:
+            injected = self._synthetic_drift_z_rate * (time.monotonic() - self._start_time)
+            points_map_frame = points_map_frame.copy()
+            points_map_frame[:, 2] += injected
+            sensor_origin = sensor_origin.copy()
+            sensor_origin[2] += injected
+
+        # step 10: apply whatever correction has already been learned FIRST,
+        # then measure how much error is STILL left using that already-
+        # corrected data against the global map's most-confident cells (see
+        # emap/drift.py). Order matters here: measuring the residual against
+        # the RAW, not-yet-corrected pose instead would compare against a
+        # map that already reflects earlier corrections - a mismatch that
+        # feeds back on itself and grows every callback instead of shrinking
+        # (traced and confirmed live: an early version of this method did
+        # exactly that and made the map's elevation runaway to hundreds of
+        # meters within seconds). Correcting first means a fully-converged
+        # estimate leaves ~zero residual to react to - a stable fixed point,
+        # not a moving target - matching the convergence
+        # test_damped_gain_converges_toward_true_offset_without_overshoot
+        # in tests/emap/test_drift.py actually verifies.
+        if self._enable_drift_compensation and self._z_bias_estimate != 0.0:
+            points_map_frame = points_map_frame.copy()
+            points_map_frame[:, 2] -= self._z_bias_estimate
+            sensor_origin = sensor_origin.copy()
+            sensor_origin[2] -= self._z_bias_estimate
+
+        if self._enable_drift_compensation:
+            residual_left = estimate_vertical_drift(
+                self._global_map,
+                points_map_frame,
+                min_confidence_variance=self._drift_confidence_variance_thresh,
+                min_matches=self._drift_min_matches,
+                max_reasonable_residual=self._drift_max_reasonable_residual,
+            )
+            if residual_left is not None:
+                self._z_bias_estimate += self._drift_correction_gain * residual_left
+
         # The local map re-centers on the drone's body (step 5) before being
         # fused into - the whole point of this map is to always be "centered
         # on me right now".
@@ -228,7 +338,11 @@ class ElevationMappingNode(Node):
         get IDENTICAL treatment from the same sensor data, rather than two
         copies of this logic risking drifting apart from each other.
         """
-        fuse_points(
+        # step 9: same call either way (identical signature/contract) - only
+        # which function runs differs, resolved once at startup rather than
+        # re-checked here every callback.
+        fuse_fn = fuse_points_gpu if self._use_gpu_fusion else fuse_points
+        fuse_fn(
             emap,
             points_map_frame,
             sensor_origin,

@@ -75,3 +75,5 @@ rosbag2_*/
 
 # Generated test outputs (created by running tests, not source)
 tests/**/results/
+
+cli.txt
