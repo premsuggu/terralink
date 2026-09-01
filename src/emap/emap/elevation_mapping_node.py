@@ -12,6 +12,21 @@ verified in isolation - it does not introduce any new mapping concept:
   - the `GridMap` message encoding is `utils/gridmap_utils.py`.
 See docs/work-docs/emap/step06_ros_node_integration.md for the full
 from-scratch walkthrough of how these pieces are wired together here.
+
+This node keeps TWO separate `ElevationMap` instances, not one - see
+docs/work-docs/emap/step08_persistent_global_map.md for the full story, but
+in short: a small map that re-centers on the UAV (`move_to` every callback,
+forgetting whatever falls outside it) is the right shape of memory for fast
+local reactions, but the WRONG shape for the actual end goal - autonomous UGV
+navigation needs a planner to be able to route around terrain it saw minutes
+ago and can no longer currently see. So `self._local_map` (unchanged since
+step 6) exists alongside `self._global_map`, a second, larger map that is
+simply never re-centered - `move_to` is never called on it - so it just keeps
+accumulating everything ever seen, forever, at a fixed position. Both are fed
+by the exact same sensor data every callback; neither `ElevationMap`,
+`fuse_points`, nor `compute_traversability` needed to change at all to
+support this - they already work correctly whether or not `move_to` is ever
+called on a given instance.
 """
 from __future__ import annotations
 
@@ -47,6 +62,7 @@ class ElevationMappingNode(Node):
         # without that file, e.g. while testing from the command line) ---
         self.declare_parameter("resolution", 0.1)
         self.declare_parameter("length", 20.0)
+        self.declare_parameter("global_map_length", 40.0)
         self.declare_parameter("initial_variance", 10.0)
         self.declare_parameter("sensor_noise_factor", 0.01)
         self.declare_parameter("mahalanobis_thresh", 2.0)
@@ -69,10 +85,26 @@ class ElevationMappingNode(Node):
         self._max_step = float(self.get_parameter("max_step").value)
         self._max_roughness = float(self.get_parameter("max_roughness").value)
 
-        self._map = ElevationMap(
-            resolution=self.get_parameter("resolution").value,
+        resolution = self.get_parameter("resolution").value
+        initial_variance = self.get_parameter("initial_variance").value
+
+        # The rolling map: re-centers on the UAV every callback (move_to,
+        # below) - a small, fast window around wherever the drone currently
+        # is. Kept for whatever future local-reaction/local-costmap use
+        # it's suited for, even though nothing consumes it yet.
+        self._local_map = ElevationMap(
+            resolution=resolution,
             length=self.get_parameter("length").value,
-            initial_variance=self.get_parameter("initial_variance").value,
+            initial_variance=initial_variance,
+        )
+        # The persistent map: constructed the same way, but move_to is never
+        # called on it anywhere in this file - it stays centered at (0, 0)
+        # forever and simply keeps accumulating. This is the one published
+        # on /elevation_map (below) - the one that matters for navigation.
+        self._global_map = ElevationMap(
+            resolution=resolution,
+            length=self.get_parameter("global_map_length").value,
+            initial_variance=initial_variance,
         )
 
         # tf2_ros.Buffer holds a rolling history of recent transforms;
@@ -92,13 +124,19 @@ class ElevationMappingNode(Node):
             PointCloud2, "/camera/points", self._pointcloud_callback, qos_profile_sensor_data
         )
 
-        self._map_pub = self.create_publisher(GridMap, "/elevation_map", 10)
+        # /elevation_map is the GLOBAL (persistent) map - the one anything
+        # downstream (RViz, later a planner) should actually look at.
+        # /elevation_map_local is the rolling window, kept available but not
+        # the default/primary topic.
+        self._global_map_pub = self.create_publisher(GridMap, "/elevation_map", 10)
+        self._local_map_pub = self.create_publisher(GridMap, "/elevation_map_local", 10)
         publish_rate_hz = float(self.get_parameter("publish_rate_hz").value)
-        self._publish_timer = self.create_timer(1.0 / publish_rate_hz, self._publish_map)
+        self._publish_timer = self.create_timer(1.0 / publish_rate_hz, self._publish_maps)
 
         self.get_logger().info(
-            f"elevation_mapping_node: {self._map.cell_n}x{self._map.cell_n} cells @ "
-            f"{self._map.resolution} m/cell, map_frame='{self._map_frame}'"
+            f"elevation_mapping_node: local {self._local_map.cell_n}x{self._local_map.cell_n} "
+            f"+ global {self._global_map.cell_n}x{self._global_map.cell_n} cells @ "
+            f"{self._local_map.resolution} m/cell, map_frame='{self._map_frame}'"
         )
 
     def _lookup_transform(self, target_frame: str, source_frame: str, stamp):
@@ -167,13 +205,31 @@ class ElevationMappingNode(Node):
         points_sensor_frame = points_sensor_frame[finite]
 
         points_map_frame = transform_points(points_sensor_frame, camera_tf)
-
         base_position = translation_of(base_tf)
-        self._map.move_to(base_position[0], base_position[1])
-
         sensor_origin = translation_of(camera_tf)
+
+        # The local map re-centers on the drone's body (step 5) before being
+        # fused into - the whole point of this map is to always be "centered
+        # on me right now".
+        self._local_map.move_to(base_position[0], base_position[1])
+        self._fuse_and_update_traversability(self._local_map, points_map_frame, sensor_origin)
+
+        # The global map NEVER moves - no move_to call here, ever. Points
+        # that land outside its fixed extent are simply dropped by
+        # fuse_points' existing in_bounds check (step 4) - nothing new to
+        # handle, it already behaves correctly for a map that doesn't follow
+        # the sensor.
+        self._fuse_and_update_traversability(self._global_map, points_map_frame, sensor_origin)
+
+    def _fuse_and_update_traversability(self, emap: ElevationMap, points_map_frame, sensor_origin) -> None:
+        """Run one point cloud through `fuse_points` (step 4) then
+        `compute_traversability` (step 7) against a single map - pulled out
+        as its own method so the local and global maps in the callback above
+        get IDENTICAL treatment from the same sensor data, rather than two
+        copies of this logic risking drifting apart from each other.
+        """
         fuse_points(
-            self._map,
+            emap,
             points_map_frame,
             sensor_origin,
             sensor_noise_factor=self._sensor_noise_factor,
@@ -182,18 +238,18 @@ class ElevationMappingNode(Node):
             min_valid_distance=self._min_valid_distance,
         )
 
-        # step 7: recompute traversability from the map's just-updated
+        # recompute traversability from this map's just-updated
         # elevation/variance. Done here (once per point cloud, right after
         # fusion) rather than on its own timer - traversability only ever
         # needs to reflect the map's current elevation/variance, so there's
         # no reason to recompute it on any different schedule than "whenever
         # that data just changed".
-        is_valid = self._map.layer("is_valid") > 0.5
+        is_valid = emap.layer("is_valid") > 0.5
         traversability = compute_traversability(
-            self._map.layer("elevation"),
-            self._map.layer("variance"),
+            emap.layer("elevation"),
+            emap.layer("variance"),
             is_valid,
-            self._map.resolution,
+            emap.resolution,
             self._max_slope,
             self._max_step,
             self._max_roughness,
@@ -204,24 +260,30 @@ class ElevationMappingNode(Node):
         # back into every cell here would still be redundant/harmless; the
         # explicit mask keeps this line self-documenting about the rule
         # every other layer already follows.
-        self._map.layer("traversability")[is_valid] = traversability[is_valid]
+        emap.layer("traversability")[is_valid] = traversability[is_valid]
 
-    def _publish_map(self) -> None:
-        """Build and publish one `GridMap` message from the map's current
-        state - see `utils/gridmap_utils.py` for why the layer encoding
-        below isn't simply `layer.flatten().tolist()`.
+    def _publish_maps(self) -> None:
+        """Publish both maps as `GridMap` messages."""
+        self._global_map_pub.publish(self._build_gridmap_msg(self._global_map))
+        self._local_map_pub.publish(self._build_gridmap_msg(self._local_map))
+
+    def _build_gridmap_msg(self, emap: ElevationMap) -> GridMap:
+        """Build one `GridMap` message from a map's current state - see
+        `utils/gridmap_utils.py` for why the layer encoding below isn't
+        simply `layer.flatten().tolist()`. Shared by both maps (Section
+        above) so they can never accidentally be encoded differently.
         """
         gm = GridMap()
         gm.header.frame_id = self._map_frame
         gm.header.stamp = self.get_clock().now().to_msg()
-        gm.info.resolution = self._map.resolution
+        gm.info.resolution = emap.resolution
         # Unlike src/d1, ElevationMap has no reserved border cells (every
         # cell is used - see step 3), so length_x/length_y need no
         # adjustment beyond the map's own configured length.
-        gm.info.length_x = self._map.length
-        gm.info.length_y = self._map.length
-        gm.info.pose.position.x = self._map.center_x
-        gm.info.pose.position.y = self._map.center_y
+        gm.info.length_x = emap.length
+        gm.info.length_y = emap.length
+        gm.info.pose.position.x = emap.center_x
+        gm.info.pose.position.y = emap.center_y
         # Left neutral (z=0, identity orientation) rather than embedding the
         # drone's actual altitude/attitude here - some GridMap viewers apply
         # info.pose's z/orientation directly to the whole map, which would
@@ -236,11 +298,10 @@ class ElevationMappingNode(Node):
         # there automatically means it gets published here too.
         gm.layers = list(LAYER_INDEX.keys())
         gm.basic_layers = ["elevation"]
-        gm.data = [encode_layer_to_multiarray(self._map.layer(name)) for name in gm.layers]
+        gm.data = [encode_layer_to_multiarray(emap.layer(name)) for name in gm.layers]
         gm.outer_start_index = 0
         gm.inner_start_index = 0
-
-        self._map_pub.publish(gm)
+        return gm
 
 
 def main(args=None) -> None:

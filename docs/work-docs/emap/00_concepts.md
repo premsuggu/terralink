@@ -147,6 +147,12 @@ Everything through step 6 answers "how high is the ground here?" Traversability 
 
 Three intuitive properties matter for that judgment, and step 7 computes each from things the map already tracks: how **steep** the ground is at a cell (a slope, computed from how much neighboring cells' heights differ), whether there's a sharp **ledge** nearby (a big height jump within a small neighborhood, which a smooth slope calculation can under-react to), and how **rough**/inconsistent the ground has measured out to be (reusing the cell's own `variance` from Section 9 - though see step07's docs for an honest caveat about that specific choice). Combining simple, named checks like these - rather than a single opaque score - keeps every decision explainable: a cell is flagged risky *because* it's steep, or *because* there's a ledge, not for a reason nobody can point to.
 
+## 13. Local vs. global maps (added in step 8)
+
+Step 5 gave the map a fixed size that re-centers on the robot ("rolling window") so it never has to grow forever. That's genuinely the right choice for one purpose - a small, fast, always-nearby picture of the immediate surroundings, useful for quick reactions - but it's the wrong choice for a different, equally real purpose: **planning a route across an area larger than what's currently in view**. A path planner has to be able to say "go around that hill" even after the robot has flown past it and it's no longer anywhere in the current sensor view - if the map forgets everything outside a small moving window, the planner has no memory of the hill at all once it scrolls out of range.
+
+The standard answer (this is genuinely how real navigation stacks like Nav2 are built, not a one-off idea for this project) is to keep **both**, side by side, fed by the same sensor data: a small **local** map that keeps re-centering (for fast, nearby reactions) and a larger **global** map that never re-centers and never forgets (for planning across the whole known area). Nothing about the underlying `ElevationMap`/fusion/traversability code needs to be different between the two - the only difference is whether something ever calls `move_to` on a given map instance. A map that's never told to move just keeps quietly accumulating everything it's shown, forever, at a fixed spot - exactly what a persistent record of "everywhere I've ever looked" needs to do.
+
 ## Glossary
 
 | Term | Meaning |
@@ -181,3 +187,5 @@ Three intuitive properties matter for that judgment, and step 7 computes each fr
 | `GridMap` message | The standard ROS 2 message for a multi-layer 2.5D grid map, geometry + all layers in one message |
 | Traversability | A per-cell score for how easy/safe that terrain is to drive over |
 | Heightmap (SDF) | A grayscale image used to build real 3D terrain in a Gazebo world |
+| Local map | A small map that re-centers on the robot - fast, nearby, forgets far-away ground |
+| Global map | A large map that never re-centers - persistent memory of everywhere ever seen |

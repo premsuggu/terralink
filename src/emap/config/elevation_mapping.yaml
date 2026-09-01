@@ -7,8 +7,15 @@ elevation_mapping_node:
   ros__parameters:
     # --- step 3: the map grid itself ---
     resolution: 0.1          # meters per cell
-    length: 20.0             # meters per side of the (square) map
+    length: 20.0             # meters per side of the LOCAL rolling map (re-centers on the UAV)
     initial_variance: 10.0   # placeholder uncertainty for a never-observed cell
+
+    # --- persistent global map (see docs/work-docs/emap/step08_persistent_global_map.md) ---
+    # A second, larger map, fixed at the world origin forever (never re-centers,
+    # never forgets) - this is the one that matters for navigation later, since
+    # a path planner needs to remember terrain it can no longer currently see.
+    # Shares resolution/initial_variance with the local map above.
+    global_map_length: 40.0   # meters per side - generous headroom over our ~20m test worlds
 
     # --- step 4: Bayesian fusion ---
     sensor_noise_factor: 0.01   # measurement variance = this * range^2
