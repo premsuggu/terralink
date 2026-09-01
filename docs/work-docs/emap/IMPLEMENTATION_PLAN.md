@@ -1,8 +1,8 @@
 # emap: From-Scratch Elevation Mapping - Implementation Plan
 
-**Status**: Active rebuild, replacing `terralink_elevation` as the working line of development.
+**Status**: Active development line, having fully superseded the earlier `terralink_elevation` attempt (removed - see git history if ever needed).
 **Package**: `emap` (`src/emap/`)
-**Reference (read-only)**: `src/d1/elevation_mapping_gpu_ros2/` and `src/terralink_elevation/` — both stay untouched; consult for algorithms and lessons learned, never edit.
+**Reference (read-only)**: `src/d1/elevation_mapping_gpu_ros2/` — stays untouched; consult for algorithms and lessons learned, never edit.
 **Docs**: `docs/work-docs/emap/` — this file is the roadmap; [`00_concepts.md`](00_concepts.md) is a from-scratch primer on ROS 2/Gazebo/SDF basics (read once); one `stepNN_*.md` per completed step, written as a beginner-friendly walkthrough of that step's new code and concepts, building on `00_concepts.md`.
 **Tests**: `tests/emap/` (created once step 2 introduces testable algorithm code)
 
@@ -36,6 +36,6 @@ Each step gets its own `stepNN_*.md` in this folder covering: what was built, wh
 
 - CPU-first, GPU only after CPU is proven.
 - Every step is independently testable before moving to the next.
-- Reference `src/d1` and `src/terralink_elevation` for ideas; never modify either.
+- Reference `src/d1` for ideas; never modify it.
 - No test/debug files in the repo root — everything under `tests/emap/`.
 - Run simulations headless by default; use the GUI only to sanity-check visually.

@@ -16,14 +16,13 @@
 
 ## ACTIVE: From-Scratch Implementation (`emap`)
 
-**Goal**: Build our own elevation mapping package from scratch, referencing but NOT modifying the Direction 1 reference code (`src/d1/`) or the earlier from-scratch attempt (`src/terralink_elevation/`, now legacy/reference-only).
+**Goal**: Build our own elevation mapping package from scratch, referencing but NOT modifying the Direction 1 reference code (`src/d1/`). An earlier from-scratch attempt, `src/terralink_elevation/` (Gazebo Classic-based, never verified working), was removed entirely once `emap` fully superseded it - see git history if the old code is ever needed for reference.
 
-**Environment note**: this machine has Ignition Gazebo Fortress (`gz sim`) + `ros_gz_sim`/`ros_gz_bridge` for ROS 2 Humble, NOT Gazebo Classic (`gazebo_ros`) - `terralink_elevation` and `src/d3` depend on Classic and won't run here as-is. `emap` targets Ignition/`ros_gz`. Also: `fuel.gazebosim.org` (Ignition Fuel) connects but stalls on downloads in this sandbox - don't add runtime/setup dependencies on it; vendor external assets locally instead (GitHub raw is reliable).
+**Environment note**: this machine has Ignition Gazebo Fortress (`gz sim`) + `ros_gz_sim`/`ros_gz_bridge` for ROS 2 Humble, NOT Gazebo Classic (`gazebo_ros`) - `src/d3` depends on Classic and won't run here as-is. `emap` targets Ignition/`ros_gz`. Also: `fuel.gazebosim.org` (Ignition Fuel) connects but stalls on downloads in this sandbox - don't add runtime/setup dependencies on it; vendor external assets locally instead (GitHub raw is reliable).
 
 | Component | Package | Location | Status |
 |-----------|---------|----------|--------|
-| **Elevation Mapping** | `emap` | `src/emap/` | **Active - step 1 (UAV in Gazebo) complete, see `docs/work-docs/emap/`** |
-| **Elevation Mapping (legacy)** | `terralink_elevation` | `src/terralink_elevation/` | Reference only, not under active development |
+| **Elevation Mapping** | `emap` | `src/emap/` | **Active - see `docs/work-docs/emap/`** |
 | **Semantic Vision** | `terralink_semantic` | `src/terralink_semantic/` | Not started |
 | **Navigation Core** | `terralink_nav` | `src/terralink_nav/` | Not started |
 
@@ -93,37 +92,24 @@ terralink/
     │   │   └── worlds/          # Gazebo worlds
     │   └── tutorial_interfaces/ # GetWaypoints service definition
     │
-    └── terralink_elevation/     # OUR from-scratch elevation mapping
-        ├── CMakeLists.txt
+    └── emap/                    # OUR from-scratch elevation mapping (active)
         ├── package.xml
         ├── config/
         │   └── elevation_mapping.yaml
         ├── launch/
-        │   ├── elevation_mapping.launch.py
-        │   └── elevation_nav_simulation.launch.py
-        ├── terralink_elevation/
-        │   ├── __init__.py
-        │   ├── parameter.py              # Parameter dataclass
+        │   └── uav_sim.launch.py
+        ├── models/, worlds/, rviz/  # Gazebo assets
+        ├── emap/
         │   ├── elevation_map.py          # Core ElevationMap class
         │   ├── elevation_mapping_node.py # ROS 2 node
-        │   ├── costmap_converter.py      # GridMap → OccupancyGrid
-        │   ├── kernels/
-        │   │   ├── __init__.py
-        │   │   ├── fusion_kernel.py      # Main fusion + ray tracing
-        │   │   ├── drift_kernel.py       # Error counting
-        │   │   └── utils.py              # Shared device functions
-        │   └── utils/
-        │       ├── __init__.py
-        │       ├── coord_transform.py    # Internal ↔ GridMap coords
-        │       └── gridmap_utils.py      # GridMap message encoding
-        ├── scripts/
-        │   └── synthetic_pointcloud.py   # Test data generator
-        └── test/
-            ├── test_parameter.py
-            ├── test_elevation_map.py
-            ├── test_kernels.py
-            └── test_integration.py
+        │   ├── fusion.py / fusion_gpu.py # CPU / GPU Bayesian fusion
+        │   ├── traversability.py         # Analytical traversability
+        │   ├── drift.py                  # Vertical drift compensation
+        │   ├── cmd_vel_watchdog.py        # UAV command-timeout safety node
+        │   └── utils/                    # coord_transform, gridmap_utils, tf_utils
+        └── (tests live in tests/emap/, not test/ - see below)
 ```
+See `docs/work-docs/emap/IMPLEMENTATION_PLAN.md` for the step-by-step build history.
 
 ---
 
@@ -170,18 +156,13 @@ colcon build --packages-select elevation_map_msgs elevation_mapping_cupy
 colcon build --packages-select semantic_nav
 ```
 
-### Build Our Custom Elevation Mapping (terralink_elevation)
+### Build `emap` (our active elevation mapping package)
 
 ```bash
-# From repo root
-colcon build --packages-select terralink_elevation \
-    --cmake-args -DBUILD_TESTING=ON
-
-# Requires: CUDA Toolkit 12.x, CuPy 13.6.0 (pip install cupy-cuda12x==13.6.0)
-# Python deps: simple_parsing, ros2_numpy, transforms3d>=0.4.2, scipy, numpy==1.24.2
-# ROS deps: ros-humble-grid-map-msgs, ros-humble-grid-map-rviz-plugin, 
-#           ros-humble-nav2-costmap-2d, ros-humble-ros2-numpy
+source /opt/ros/humble/setup.bash
+colcon build --packages-select emap
 ```
+See `docs/work-docs/emap/IMPLEMENTATION_PLAN.md` for full build/run/test instructions - it's kept current as the package evolves, unlike this section.
 
 ---
 
@@ -234,52 +215,13 @@ ros2 topic hz /elevation_mapping_node/elevation_map
 
 ---
 
-## How to Run (Our Custom Elevation Mapping - terralink_elevation)
-
-### Synthetic Demo (No Hardware/Gazebo)
+## How to Run (`emap` - our active elevation mapping)
 
 ```bash
 source /opt/ros/humble/setup.bash
-source install/local_setup.bash
-
-# Terminal 1: Synthetic pointcloud + TF + Elevation mapping
-ros2 launch terralink_elevation elevation_mapping.launch.py launch_rviz:=false
-
-# Terminal 2 (optional): RViz visualization
-ros2 run rviz2 rviz2 -d $(ros2 pkg prefix terralink_elevation)/share/terralink_elevation/rviz/synthetic_demo.rviz
+ros2 launch emap uav_sim.launch.py headless:=true launch_rviz:=true world:=bump
 ```
-
-**Expected Output**:
-```
-[terralink_elevation]: Initialized map with length: 10.0, resolution: 0.05, cells: 202
-```
-GridMap publishing at **~10 Hz** on `/terralink_elevation/elevation_map` with layers: `elevation`, `variance`, `traversability`.
-
-### Verification
-
-```bash
-ros2 topic hz /terralink_elevation/elevation_map
-# average rate: 10.0 Hz
-# Valid cells: 90%+ (target)
-```
-
-### Full Simulation (Gazebo + UAV + UGV + Nav2)
-
-```bash
-source install/local_setup.bash
-ros2 launch terralink_elevation elevation_nav_simulation.launch.py
-```
-
-**Launch Sequence:**
-| Time | Event |
-|------|-------|
-| 0s | Gazebo starts loading elevation-enabled world |
-| 5s | UGV (my_bot) spawns |
-| 10s | UAV with RGB-D camera spawns |
-| ~12s | Elevation mapping starts receiving pointcloud |
-| ~15s | Costmap converter publishes `/elevation_costmap` |
-| ~18s | Nav2 starts with elevation-based costmap |
-| 20s | Goal sent, robot navigates avoiding steep/rough terrain |
+Full launch args, verification steps, and expected output are documented (and kept current) in `docs/work-docs/emap/IMPLEMENTATION_PLAN.md` and its per-step docs - refer there rather than this file for exact commands/output, which will otherwise drift out of date as `emap` evolves.
 
 ---
 
@@ -462,30 +404,13 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest elevation_mapping_cupy/tests/
 colcon test --packages-select elevation_mapping_cupy --event-handlers console_direct+
 ```
 
-### Our Custom Elevation Mapping Tests (terralink_elevation)
+### `emap` Tests (our active elevation mapping)
 
 ```bash
-# Unit tests (no ROS) - fast verification per step
-cd tests/elevation_mapping
-python -m pytest test_step01_skeleton.py -v
-python -m pytest test_step02_parameters.py -v
-python -m pytest test_step03_data_structures.py -v
-python -m pytest test_step04_fusion_cpu.py -v
-python -m pytest test_step05_fusion_gpu.py -v
-python -m pytest test_step06_ray_tracing.py -v
-python -m pytest test_step07_map_shifting.py -v
-python -m pytest test_step08_drift_comp.py -v
-python -m pytest test_step09_traversability.py -v
-
-# Integration tests (requires ROS + GPU)
-cd /home/prem/terralink
-source /opt/ros/humble/setup.bash
-source install/local_setup.bash
-colcon test --packages-select terralink_elevation --event-handlers console_direct+
-
-# Run specific test
-ros2 run terralink_elevation test_integration.py
+cd tests/emap
+python3 -m pytest -v
 ```
+All algorithm-level tests (fusion, GPU fusion, drift compensation, traversability, map shifting) live here and require no ROS/Gazebo - see `docs/work-docs/emap/IMPLEMENTATION_PLAN.md` for what each covers.
 
 ---
 
@@ -572,7 +497,7 @@ ros2 run terralink_elevation test_integration.py
 
 ### Package Creation Rules
 
-1. **New packages in `src/` root** - NOT in `src/d<N>/` (e.g., `src/terralink_elevation/`)
+1. **New packages in `src/` root** - NOT in `src/d<N>/` (e.g., `src/emap/`)
 2. **Reference `src/d1/` for algorithms** - Study, understand, NEVER copy-paste
 3. **Each step = testable module** - Unit test before integration
 4. **Document everything** - Work-logs in `docs/work-logs/` with concept explanations
@@ -580,7 +505,7 @@ ros2 run terralink_elevation test_integration.py
 
 ### Testing Discipline
 
-1. **Unit test per step** - `tests/elevation_mapping/test_stepXX_*.py`
+1. **Unit test per step** - `tests/emap/test_*.py`
 2. **No ROS in unit tests** - Pure algorithm verification
 3. **GPU vs CPU numerical match** - Verify kernel output matches CPU reference
 4. **Integration test with ROS** - After all unit tests pass
@@ -592,47 +517,8 @@ ros2 run terralink_elevation test_integration.py
 3. **Work-log per step** - What, why, how, pitfalls
 4. **Examples** - Synthetic data, expected outputs
 
-### Code Architecture
+See the earlier directory tree (`emap/` under "ACTIVE: From-Scratch Implementation") for the current code architecture.
 
-```
-terralink_elevation/
-├── parameter.py              # Single source of truth (dataclass + YAML)
-├── elevation_map.py          # Core logic (clean, documented)
-├── kernels/                  # CuPy ElementwiseKernels (GPU)
-│   ├── fusion_kernel.py      # Main fusion + ray tracing
-│   ├── drift_kernel.py       # Error counting
-│   └── utils.py              # Shared device functions
-├── utils/                    # Helpers (no GPU)
-│   ├── coord_transform.py    # Internal ↔ GridMap coords
-│   └── gridmap_utils.py      # GridMap message encoding
-├── elevation_mapping_node.py # ROS 2 node (thin wrapper)
-├── costmap_converter.py      # GridMap → OccupancyGrid
-└── test/                     # Unit tests per module
-```
-
----
- 
-## Validation Results: Gaussian Bump Ground Truth
- 
-**Test Setup**: Synthetic Gaussian bump ground truth (1m height, 2m sigma) with horizontal LiDAR simulation
- 
-| Config | Resolution | Bump | Sigma | **RMSE** | **MAE** | **Coverage** | **Rel RMSE** |
-|--------|------------|------|-------|----------|---------|--------------|--------------|
-| **SteepBump** | 0.1m | 2.0m | 1.0m | **0.089m** | 0.069m | **45.1%** | **4.4%** ⭐ Best |
-| **ShallowWide** | 0.1m | 0.5m | 3.0m | **0.095m** | 0.074m | 45.2% | 9.2% |
-| **Default** | 0.1m | 1.0m | 2.0m | **0.093m** | 0.072m | 45.2% | 9.3% |
-| **HighRes** | 0.05m | 1.0m | 2.0m | 0.239m | 0.209m | 36.0% | 23.9% |
- 
-### Key Findings:
-1. **Accuracy is good**: RMSE ~9-10cm for typical configurations (Default, ShallowWide, SteepBump)
-2. **Coverage improved**: 45% valid cells (fixed sensor simulation)
-3. **SteepBump** has best relative accuracy (4.4% relative RMSE) - steeper features are easier to resolve
-4. **HighRes** performs worse due to sensor noise scaling with resolution
- 
-**Validation Test Location**: `tests/elevation_mapping/test_validation_gaussian.py`
- 
-Run: `PYTHONPATH=/home/prem/terralink/install/terralink_elevation/lib/python3.10/site-packages python3 tests/elevation_mapping/test_validation_gaussian.py`
- 
 ---
  
 ## Quick Reference Commands
@@ -648,25 +534,20 @@ colcon build --packages-select elevation_map_msgs elevation_mapping_cupy \
 # Build Direction 2 (semantic)
 colcon build --packages-select semantic_nav --cmake-args -DCMAKE_BUILD_TYPE=Release
  
-# Build Our Custom Elevation Mapping (terralink_elevation)
-colcon build --packages-select terralink_elevation \
-    --cmake-args -DBUILD_TESTING=ON
+# Build emap (our active elevation mapping)
+colcon build --packages-select emap
  
 # Run Direction 1 - Synthetic Demo (WORKING @ 10 Hz)
 source install/local_setup.bash
 ros2 launch elevation_mapping_cupy synthetic_depth_demo.launch.py launch_rviz:=false
  
-# Run Our Custom Elevation Mapping - Synthetic Demo
+# Run emap
 source install/local_setup.bash
-ros2 launch terralink_elevation elevation_mapping.launch.py launch_rviz:=false
+ros2 launch emap uav_sim.launch.py headless:=true launch_rviz:=true world:=bump
  
 # Run Direction 3 simulation
 source install/local_setup.bash
 ros2 launch my_bot launch_sim.launch.py
- 
-# Run Full Simulation (UAV + UGV + Elevation Mapping + Nav2)
-source install/local_setup.bash
-ros2 launch terralink_elevation elevation_nav_simulation.launch.py
  
 # Check topics
 ros2 topic list | grep -E "(camera|waypoint|goal|odom|elevation)"
@@ -680,8 +561,8 @@ ros2 log get waypoints_server | grep -E "(Building|complete|Valid)"
 # RViz for Direction 1
 ros2 run rviz2 rviz2 -d $(ros2 pkg prefix elevation_mapping_cupy)/share/elevation_mapping_cupy/rviz/synthetic_demo.rviz
  
-# RViz for Our Custom Elevation Mapping
-ros2 run rviz2 rviz2 -d $(ros2 pkg prefix terralink_elevation)/share/terralink_elevation/rviz/synthetic_demo.rviz
+# RViz for emap (or pass launch_rviz:=true to the launch file above)
+ros2 run rviz2 rviz2 -d $(ros2 pkg prefix emap)/share/emap/rviz/elevation_mapping.rviz
 ```
 ---
 
