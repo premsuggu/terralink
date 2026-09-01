@@ -55,6 +55,25 @@ def generate_launch_description():
     )
     launch_rviz = LaunchConfiguration('launch_rviz')
 
+    # Real bug found live: Ignition's MulticopterVelocityControl plugin has
+    # no built-in command timeout - it holds the LAST /cmd_vel forever, so a
+    # single `ros2 topic pub --once` makes the UAV move indefinitely, well
+    # past any altitude/area this project is meant to test at (this is what
+    # exposed the depth camera's far-clip clamp-artifact bug - see
+    # fusion.py's max_valid_range). Enabled by default so that gap is closed
+    # automatically rather than relying on every operator remembering to
+    # always send an explicit stop after a command.
+    cmd_vel_watchdog_arg = DeclareLaunchArgument(
+        'cmd_vel_watchdog', default_value='true',
+        description='Auto-stop the UAV if no new /cmd_vel arrives within cmd_vel_timeout seconds'
+    )
+    cmd_vel_watchdog_enabled = LaunchConfiguration('cmd_vel_watchdog')
+    cmd_vel_timeout_arg = DeclareLaunchArgument(
+        'cmd_vel_timeout', default_value='1.0',
+        description='Seconds of silence on /cmd_vel before the watchdog publishes a stop'
+    )
+    cmd_vel_timeout = LaunchConfiguration('cmd_vel_timeout')
+
     # model://iris_quad (and, since step 7, model://heightmaps/...) must
     # resolve under either <pkg_share>/models or <pkg_share>/worlds.
     resource_path = SetEnvironmentVariable(
@@ -121,6 +140,15 @@ def generate_launch_description():
         condition=IfCondition(enable_mapping),
     )
 
+    cmd_vel_watchdog = Node(
+        package='emap',
+        executable='cmd_vel_watchdog',
+        name='cmd_vel_watchdog',
+        parameters=[{'timeout_sec': cmd_vel_timeout}],
+        output='screen',
+        condition=IfCondition(cmd_vel_watchdog_enabled),
+    )
+
     rviz_config = os.path.join(pkg_share, 'rviz', 'elevation_mapping.rviz')
     rviz = Node(
         package='rviz2',
@@ -136,6 +164,8 @@ def generate_launch_description():
         enable_mapping_arg,
         world_arg,
         launch_rviz_arg,
+        cmd_vel_watchdog_arg,
+        cmd_vel_timeout_arg,
         resource_path,
         force_software_gl,
         gz_sim_headless,
@@ -143,5 +173,6 @@ def generate_launch_description():
         bridge,
         camera_static_tf,
         mapping_node,
+        cmd_vel_watchdog,
         rviz,
     ])

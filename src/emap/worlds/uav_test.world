@@ -117,8 +117,15 @@
     </gui>
 
     <light type="directional" name="sun">
+      <!-- pose is z=500, not 10 - see bump_test.world's identical light for
+           why: a directional light's illumination depends only on
+           <direction>, never <pose>, and this environment's software-
+           rendered depth camera was found (live) to occasionally misread a
+           light's pose as physical geometry. Moving it outside the map's
+           extent makes any such phantom point land out of bounds and get
+           dropped for free, rather than risk it landing inside the map. -->
       <cast_shadows>true</cast_shadows>
-      <pose>0 0 10 0 0 0</pose>
+      <pose>0 0 500 0 0 0</pose>
       <diffuse>0.8 0.8 0.8 1</diffuse>
       <specular>0.2 0.2 0.2 1</specular>
       <attenuation>

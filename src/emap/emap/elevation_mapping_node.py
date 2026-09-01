@@ -95,6 +95,7 @@ class ElevationMappingNode(Node):
         self.declare_parameter("mahalanobis_thresh", 2.0)
         self.declare_parameter("outlier_variance", 1.0)
         self.declare_parameter("min_valid_distance", 0.2)
+        self.declare_parameter("max_valid_range", 19.8)
         self.declare_parameter("map_frame", "iris_quad/odom")
         self.declare_parameter("base_frame", "iris_quad/base_link")
         self.declare_parameter("publish_rate_hz", 2.0)
@@ -115,6 +116,7 @@ class ElevationMappingNode(Node):
         self._mahalanobis_thresh = float(self.get_parameter("mahalanobis_thresh").value)
         self._outlier_variance = float(self.get_parameter("outlier_variance").value)
         self._min_valid_distance = float(self.get_parameter("min_valid_distance").value)
+        self._max_valid_range = float(self.get_parameter("max_valid_range").value)
         self._max_slope = float(self.get_parameter("max_slope").value)
         self._max_step = float(self.get_parameter("max_step").value)
         self._max_roughness = float(self.get_parameter("max_roughness").value)
@@ -350,6 +352,7 @@ class ElevationMappingNode(Node):
             mahalanobis_thresh=self._mahalanobis_thresh,
             outlier_variance=self._outlier_variance,
             min_valid_distance=self._min_valid_distance,
+            max_valid_range=self._max_valid_range,
         )
 
         # recompute traversability from this map's just-updated

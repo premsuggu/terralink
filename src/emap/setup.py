@@ -38,6 +38,7 @@ setup(
     entry_points={
         'console_scripts': [
             'elevation_mapping_node = emap.elevation_mapping_node:main',
+            'cmd_vel_watchdog = emap.cmd_vel_watchdog:main',
         ],
     },
 )

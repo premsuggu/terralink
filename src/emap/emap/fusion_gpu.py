@@ -34,8 +34,12 @@ def fuse_points_gpu(
     mahalanobis_thresh: float,
     outlier_variance: float,
     min_valid_distance: float,
+    max_valid_range: float | None = None,
 ) -> None:
-    """GPU version of `fusion.fuse_points` - same arguments, same effect."""
+    """GPU version of `fusion.fuse_points` - same arguments, same effect
+    (including `max_valid_range` - see fusion.py's docstring for why that
+    filter exists: a real, observed depth-camera far-clip clamp artifact,
+    not a hypothetical one)."""
     # --- Host -> device: only the two layers this function actually reads
     # or writes, plus this batch's points. Everything else about `emap`
     # (world_to_grid, in_bounds, shape) is cheap scalar/int math done on the
@@ -48,6 +52,11 @@ def fuse_points_gpu(
     offset = points_xyz - sensor_origin
     range_sq = cp.sum(offset * offset, axis=1)
     far_enough = range_sq >= (min_valid_distance * min_valid_distance)
+    not_clamped = (
+        range_sq <= (max_valid_range * max_valid_range)
+        if max_valid_range is not None
+        else cp.ones_like(far_enough)
+    )
 
     # --- Step 2: per-point measurement variance ---
     measurement_variance = sensor_noise_factor * range_sq
@@ -62,7 +71,7 @@ def fuse_points_gpu(
     row, col = emap.world_to_grid(x, y)
     inside = emap.in_bounds(row, col)
 
-    far_enough_host = cp.asnumpy(far_enough)
+    far_enough_host = cp.asnumpy(far_enough) & cp.asnumpy(not_clamped)
     keep = far_enough_host & inside
     if not np.any(keep):
         return

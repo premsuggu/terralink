@@ -157,6 +157,72 @@ def test_outlier_is_rejected_but_still_raises_variance():
     assert emap.layer("is_valid")[row, col] == 0.0  # an outlier does not "confirm" the cell
 
 
+def test_max_valid_range_rejects_clamped_far_clip_artifacts_but_keeps_real_far_readings():
+    """Live testing found a real depth-camera bug: when nothing is within the
+    sensor's configured far clip plane, MOST pixels correctly report +inf
+    (filtered upstream, before this function ever sees them), but a small
+    minority instead clamp to a value right at the clip boundary instead of
+    a clean "no return". max_valid_range must reject a point at that
+    clamped-boundary range while still fusing a point that's genuinely
+    farther out but clearly below the boundary - the exact "don't reject
+    19.5 while missing something worse" requirement this filter exists for.
+    """
+    emap = new_map()  # LENGTH=10 map, but world_to_grid/in_bounds only care
+    # about (x, y) - z (and therefore range) is independent of map extent,
+    # so points far outside this map's 10m footprint but within a plausible
+    # sensor range are still a valid way to exercise this specific filter in
+    # isolation (map-bounds rejection is already covered by the
+    # out-of-bounds case in test_too_close_and_out_of_bounds_points_have_zero_effect).
+    sensor_origin = np.array([0.0, 0.0, 20.0])
+    max_valid_range = 19.8
+
+    clamped_artifact = [0.0, 0.0, 0.06]   # range = 20.0 - 0.06 = 19.94, matches
+    # the live-observed clamp value almost exactly - must be rejected.
+    real_far_reading = [0.0, 0.0, 0.5]    # range = 19.5 - genuinely farther
+    # out than most readings, but comfortably below the clamp boundary -
+    # must NOT be rejected just for being far.
+
+    row_a, col_a = emap.world_to_grid(0.0, 0.0)
+
+    fuse_points(
+        emap, [clamped_artifact], sensor_origin,
+        sensor_noise_factor=SENSOR_NOISE_FACTOR, mahalanobis_thresh=MAHALANOBIS_THRESH,
+        outlier_variance=OUTLIER_VARIANCE, min_valid_distance=MIN_VALID_DISTANCE,
+        max_valid_range=max_valid_range,
+    )
+    assert emap.layer("is_valid")[row_a, col_a] == 0.0, "the clamped far-clip artifact must be rejected"
+
+    fuse_points(
+        emap, [real_far_reading], sensor_origin,
+        sensor_noise_factor=SENSOR_NOISE_FACTOR, mahalanobis_thresh=MAHALANOBIS_THRESH,
+        outlier_variance=OUTLIER_VARIANCE, min_valid_distance=MIN_VALID_DISTANCE,
+        max_valid_range=max_valid_range,
+    )
+    assert emap.layer("is_valid")[row_a, col_a] == 1.0, "a genuine reading below the clamp boundary must still be fused"
+    # Bayesian-blended against the map's default prior (elevation=0,
+    # variance=INITIAL_VARIANCE), same formula as every other fusion test -
+    # NOT a plain overwrite to real_far_reading's raw z.
+    v = SENSOR_NOISE_FACTOR * (19.5 ** 2)
+    expected_h = (0.0 * v + real_far_reading[2] * INITIAL_VARIANCE) / (INITIAL_VARIANCE + v)
+    assert emap.layer("elevation")[row_a, col_a] == pytest.approx(expected_h, rel=1e-3)
+
+
+def test_max_valid_range_of_none_disables_the_filter():
+    """The default (no max_valid_range passed) must behave exactly like
+    before this filter existed - existing callers/tests that don't pass it
+    should see no change in behavior.
+    """
+    emap = new_map()
+    row, col = emap.world_to_grid(0.0, 0.0)
+    far_point = [0.0, 0.0, 100.0]
+    fuse(emap, [far_point], sensor_origin=[0.0, 0.0, 3.0])
+    # (this specific point would be an outlier given the default prior, but
+    # the point being about to reach step 5's outlier logic at all - rather
+    # than being silently dropped by a range filter that isn't even enabled
+    # - is exactly what this test is checking.)
+    assert emap.layer("variance")[row, col] == pytest.approx(INITIAL_VARIANCE + OUTLIER_VARIANCE)
+
+
 def test_too_close_and_out_of_bounds_points_have_zero_effect():
     """Two different reasons a point should be silently ignored: closer to
     the sensor than `min_valid_distance` (real depth sensors are unreliable

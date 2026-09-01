@@ -22,6 +22,17 @@ elevation_mapping_node:
     mahalanobis_thresh: 2.0     # how many "std devs" of disagreement before a point is an outlier
     outlier_variance: 1.0       # how much an outlier bumps a cell's variance by
     min_valid_distance: 0.2     # points closer than this to the sensor are dropped
+    # The rgbd_camera sensor's <far> clip in models/iris_quad/model.sdf is
+    # 20.0m. Beyond that, most pixels correctly report +inf (already
+    # filtered), but a minority instead clamp to a value right at the clip
+    # boundary instead of a clean "no return" - observed live at ~19.94m.
+    # 19.8 catches that (comfortable margin below the observed ~19.94m
+    # artifact) while still keeping genuine readings further out (e.g. a
+    # real ~19.5m hit) - NOT the same as the sensor's actual far clip, which
+    # would reject nothing. If model.sdf's <far> ever changes, update this
+    # too (kept a fixed margin below it, same convention as the hardcoded
+    # camera_static_tf offset in uav_sim.launch.py matching model.sdf's <pose>).
+    max_valid_range: 19.8
 
     # --- step 6: this node's own wiring ---
     map_frame: "iris_quad/odom"   # root of the TF tree (step 2) the map lives in

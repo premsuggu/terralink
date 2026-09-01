@@ -38,6 +38,7 @@ def fuse_points(
     mahalanobis_thresh: float,
     outlier_variance: float,
     min_valid_distance: float,
+    max_valid_range: float | None = None,
 ) -> None:
     """Fuse one batch of points into `emap`, updating it in place.
 
@@ -66,6 +67,26 @@ def fuse_points(
             this also incidentally protects against a sensor measuring a
             point essentially on top of itself, which would make `range` used
             in the noise formula meaninglessly small).
+        max_valid_range: points farther than this from the sensor are dropped
+            outright. This exists for a real, observed reason, not a
+            hypothetical one: when nothing is within the depth camera's own
+            configured `<far>` clip plane (e.g. the UAV flew above it),
+            Ignition's depth camera correctly reports `+inf` for MOST such
+            pixels (already caught elsewhere, before this function ever sees
+            them) - but a small minority instead report a finite value
+            sitting right at the clip boundary (observed live: ~19.94m
+            against a configured 20.0m far clip) instead of a clean "no
+            return". That value is indistinguishable from a genuine
+            measurement by itself, but SHOULD be distinguishable in
+            aggregate: a real ground hit can occur anywhere up to the far
+            clip, while this clamp artifact clusters tightly right at the
+            boundary. Setting `max_valid_range` a little below the sensor's
+            true configured far clip (see config/elevation_mapping.yaml's
+            comment for the exact margin chosen and why) catches that
+            artifact while still keeping genuine, farther-but-still-valid
+            readings (e.g. a real ~19.5m hit) - this is deliberately NOT the
+            same threshold as the sensor's actual far clip, which would
+            reject nothing.
     """
     points_xyz = np.asarray(points_xyz, dtype=np.float64)
     sensor_origin = np.asarray(sensor_origin, dtype=np.float64)
@@ -76,6 +97,11 @@ def fuse_points(
     # unnecessary sqrt for every point; both the min-distance check and the
     # noise formula below only ever need range^2, never the range itself.
     far_enough = range_sq >= (min_valid_distance * min_valid_distance)
+    not_clamped = (
+        range_sq <= (max_valid_range * max_valid_range)
+        if max_valid_range is not None
+        else np.ones_like(far_enough)
+    )
 
     # --- Step 2: per-point measurement variance (noisier the farther away it is) ---
     measurement_variance = sensor_noise_factor * range_sq
@@ -85,7 +111,7 @@ def fuse_points(
     row, col = emap.world_to_grid(x, y)
     inside = emap.in_bounds(row, col)
 
-    keep = far_enough & inside
+    keep = far_enough & not_clamped & inside
     if not np.any(keep):
         return  # nothing left to fuse - e.g. an empty or fully-out-of-range cloud
 

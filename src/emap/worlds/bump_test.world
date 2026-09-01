@@ -112,8 +112,25 @@
     </gui>
 
     <light type="directional" name="sun">
+      <!-- pose is z=500 (not, say, 10) deliberately: a directional light's
+           illumination depends ONLY on <direction> below, never on <pose> -
+           its rays are modeled as parallel/from infinitely far away, so
+           moving this changes nothing about how the scene looks or is lit.
+           It matters here because of a real bug found live: under this
+           environment's software-rendered (llvmpipe) Ogre2 depth camera,
+           the light's pose was occasionally misread as physical geometry,
+           producing phantom depth-camera returns at that exact world
+           position - which, at z=10, sat well inside the elevation map's
+           operational volume and got fused in as a fake ~10m-tall "tower"
+           of terrain. Placing the light far outside the map's extent (see
+           config/elevation_mapping.yaml's global_map_length) means if this
+           render glitch ever recurs, the resulting phantom point lands
+           outside the map entirely and is silently dropped by fuse_points'
+           existing in_bounds check - no mapping-code special-casing needed
+           for a light source that should never have been "visible" to a
+           depth sensor in the first place. -->
       <cast_shadows>true</cast_shadows>
-      <pose>0 0 10 0 0 0</pose>
+      <pose>0 0 500 0 0 0</pose>
       <diffuse>0.8 0.8 0.8 1</diffuse>
       <specular>0.2 0.2 0.2 1</specular>
       <attenuation>

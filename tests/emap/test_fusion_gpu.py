@@ -58,6 +58,38 @@ def test_single_point_matches_hand_computed_bayesian_update():
     assert emap.layer("is_valid")[row, col] == 1.0
 
 
+def test_max_valid_range_rejects_clamped_far_clip_artifacts_on_gpu_too():
+    """The far-clip clamp-artifact filter (see fusion.py's docstring) must
+    behave identically on the GPU path - otherwise use_gpu_fusion:=true
+    would silently reintroduce the exact live bug it was added to fix.
+    """
+    emap = new_map()
+    sensor_origin = np.array([0.0, 0.0, 20.0])
+    max_valid_range = 19.8
+    row, col = emap.world_to_grid(0.0, 0.0)
+
+    clamped_artifact = [[0.0, 0.0, 0.06]]  # range 19.94 - must be rejected
+    fuse_points_gpu(
+        emap, np.asarray(clamped_artifact, dtype=np.float64), sensor_origin,
+        sensor_noise_factor=SENSOR_NOISE_FACTOR, mahalanobis_thresh=MAHALANOBIS_THRESH,
+        outlier_variance=OUTLIER_VARIANCE, min_valid_distance=MIN_VALID_DISTANCE,
+        max_valid_range=max_valid_range,
+    )
+    assert emap.layer("is_valid")[row, col] == 0.0
+
+    real_far_reading = [[0.0, 0.0, 0.5]]  # range 19.5 - must still be fused
+    fuse_points_gpu(
+        emap, np.asarray(real_far_reading, dtype=np.float64), sensor_origin,
+        sensor_noise_factor=SENSOR_NOISE_FACTOR, mahalanobis_thresh=MAHALANOBIS_THRESH,
+        outlier_variance=OUTLIER_VARIANCE, min_valid_distance=MIN_VALID_DISTANCE,
+        max_valid_range=max_valid_range,
+    )
+    assert emap.layer("is_valid")[row, col] == 1.0
+    v = SENSOR_NOISE_FACTOR * (19.5 ** 2)
+    expected_h = (0.0 * v + 0.5 * INITIAL_VARIANCE) / (INITIAL_VARIANCE + v)
+    assert emap.layer("elevation")[row, col] == pytest.approx(expected_h, rel=1e-3)
+
+
 def test_gpu_matches_cpu_on_random_point_cloud():
     """The real point of this file: feed IDENTICAL random input to both
     fuse_points (CPU) and fuse_points_gpu (GPU), on two otherwise-identical
