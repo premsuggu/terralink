@@ -35,18 +35,23 @@ def generate_launch_description():
     )
     enable_mapping = LaunchConfiguration('enable_mapping')
 
-    # step 7: 'flat' (default, every prior step's exact ground-truth world)
-    # or 'bump' (a real Gaussian-bump terrain - see worlds/bump_test.world
-    # and scripts/generate_bump_heightmap.py) - resolved to a filename with
-    # PythonExpression since, unlike headless above, there's no simple
-    # true/false condition to pick between two whole IncludeLaunchDescriptions
-    # for every world we might add in the future.
+    # step 7: 'flat' (default, every prior step's exact ground-truth world),
+    # 'bump' (a real Gaussian-bump terrain - see worlds/bump_test.world and
+    # scripts/generate_bump_heightmap.py), or step 12's 'construction' (a
+    # hand-composed construction site - see worlds/construction_site.world
+    # and scripts/generate_construction_heightmap.py) - resolved to a
+    # filename with a chained PythonExpression since, unlike headless above,
+    # there's no simple true/false condition to pick between whole
+    # IncludeLaunchDescriptions for every world we might add in the future.
     world_arg = DeclareLaunchArgument(
         'world', default_value='flat',
-        description="Which world to load: 'flat' (uav_test.world) or 'bump' (bump_test.world)"
+        description="Which world to load: 'flat' (uav_test.world), 'bump' (bump_test.world), or 'construction' (construction_site.world)"
     )
     world = LaunchConfiguration('world')
-    world_filename = PythonExpression(["'bump_test.world' if '", world, "' == 'bump' else 'uav_test.world'"])
+    world_filename = PythonExpression([
+        "'bump_test.world' if '", world, "' == 'bump' else "
+        "('construction_site.world' if '", world, "' == 'construction' else 'uav_test.world')"
+    ])
     world_file = PathJoinSubstitution([worlds_dir, world_filename])
 
     launch_rviz_arg = DeclareLaunchArgument(

@@ -1,0 +1,39 @@
+<?xml version="1.0" ?>
+<!--
+Copyright 2020 Google LLC.
+
+This work is licensed under the Creative Commons Attribution 4.0
+International License. To view a copy of this license, visit
+http://creativecommons.org/licenses/by/4.0/ or send a letter
+to Creative Commons, PO Box 1866, Mountain View, CA 94042, USA.
+-->
+<sdf version="1.6">
+  <!-- Rescaled from GoogleResearch's original (a real toy scan - the raw
+       mesh's own bounding box is ~0.086 x 0.167 x 0.172m, an actual
+       physical toy's size, not a full-scale vehicle). <scale>26</scale>
+       brings its longest axis to ~4.3m, roughly the footprint of a real
+       mini excavator - see docs/work-docs/emap/
+       step12_construction_site_world.md for the exact measurement this
+       factor was derived from. -->
+  <model name="MINI_EXCAVATOR">
+    <static>true</static>
+    <link name="link_0">
+      <visual name="visual">
+        <geometry>
+          <mesh>
+            <uri>meshes/model.obj</uri>
+            <scale>26 26 26</scale>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="collision_0">
+        <geometry>
+          <mesh>
+            <uri>meshes/model.obj</uri>
+            <scale>26 26 26</scale>
+          </mesh>
+        </geometry>
+      </collision>
+    </link>
+  </model>
+</sdf>

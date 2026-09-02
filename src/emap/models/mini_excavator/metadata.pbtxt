@@ -1,0 +1,35 @@
+model {
+  file: "model.sdf"
+}
+name: "MINI_EXCAVATOR"
+description: "MINI EXCAVATOR\nFeatures an adjustable arm and realistic shovel to make tough digging jobs easy."
+version: 1
+authors {
+  name: "Google"
+  email: "scanned-objects@google.com"
+}
+legal {
+  copyright: "Copyright 2020 Google LLC."
+  license: "Creative Commons Attribution 4.0 International"
+}
+annotations {
+  key: "brand"
+  value: "PlanToys"
+}
+annotations {
+  key: "mpn"
+  value: "6316"
+}
+annotations {
+  key: "sku"
+  value: "0631601"
+}
+compatibilities {
+  name: "Gazebo"
+  version {
+    major: 11
+  }
+}
+categories {
+  first: "Toys"
+}

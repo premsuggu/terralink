@@ -1,0 +1,105 @@
+<?xml version="1.0"?>
+<sdf version="1.6">
+  <model name="building_frame">
+    <!-- Self-authored, not vendored: no good open-source "building under
+         construction" mesh was found (see docs/work-docs/emap/
+         step12_construction_site_world.md), and our elevation map is
+         strictly 2.5D anyway (one height per (x,y) cell - see
+         00_concepts.md Section 8) so a finished building's overhangs/
+         interior walls/windows would never show up in it differently from
+         a plain box. A skeletal concrete/steel frame - vertical columns +
+         floor slabs, no walls, no roof yet - both LOOKS like "under
+         construction" honestly (not a disguised finished building) and
+         gives the elevation map genuinely varied, sharp-edged surfaces at
+         several distinct heights to test traversability against (flat
+         slab tops, thin column cross-sections, an open unfinished roof
+         line) - a better test case than a single solid box would be. -->
+    <static>true</static>
+
+    <!-- 6 vertical columns: 4 corners + 2 mid-columns on the long (x-run)
+         sides of an 8m x 6m footprint, each 0.4m x 0.4m, running the full
+         10m height. Listed as one link per column (not combined into one
+         mesh) so each is independently visible to the depth camera as its
+         own distinct thin surface - closer to how a real column grid
+         would actually appear to a downward sensor. -->
+    <link name="column_corner_pp">
+      <pose>3.8 2.8 5.0 0 0 0</pose>
+      <collision name="collision"><geometry><box><size>0.4 0.4 10.0</size></box></geometry></collision>
+      <visual name="visual">
+        <geometry><box><size>0.4 0.4 10.0</size></box></geometry>
+        <material><ambient>0.55 0.53 0.5 1</ambient><diffuse>0.6 0.58 0.55 1</diffuse></material>
+      </visual>
+    </link>
+    <link name="column_corner_pm">
+      <pose>3.8 -2.8 5.0 0 0 0</pose>
+      <collision name="collision"><geometry><box><size>0.4 0.4 10.0</size></box></geometry></collision>
+      <visual name="visual">
+        <geometry><box><size>0.4 0.4 10.0</size></box></geometry>
+        <material><ambient>0.55 0.53 0.5 1</ambient><diffuse>0.6 0.58 0.55 1</diffuse></material>
+      </visual>
+    </link>
+    <link name="column_corner_mp">
+      <pose>-3.8 2.8 5.0 0 0 0</pose>
+      <collision name="collision"><geometry><box><size>0.4 0.4 10.0</size></box></geometry></collision>
+      <visual name="visual">
+        <geometry><box><size>0.4 0.4 10.0</size></box></geometry>
+        <material><ambient>0.55 0.53 0.5 1</ambient><diffuse>0.6 0.58 0.55 1</diffuse></material>
+      </visual>
+    </link>
+    <link name="column_corner_mm">
+      <pose>-3.8 -2.8 5.0 0 0 0</pose>
+      <collision name="collision"><geometry><box><size>0.4 0.4 10.0</size></box></geometry></collision>
+      <visual name="visual">
+        <geometry><box><size>0.4 0.4 10.0</size></box></geometry>
+        <material><ambient>0.55 0.53 0.5 1</ambient><diffuse>0.6 0.58 0.55 1</diffuse></material>
+      </visual>
+    </link>
+    <link name="column_mid_p">
+      <pose>0 2.8 5.0 0 0 0</pose>
+      <collision name="collision"><geometry><box><size>0.4 0.4 10.0</size></box></geometry></collision>
+      <visual name="visual">
+        <geometry><box><size>0.4 0.4 10.0</size></box></geometry>
+        <material><ambient>0.55 0.53 0.5 1</ambient><diffuse>0.6 0.58 0.55 1</diffuse></material>
+      </visual>
+    </link>
+    <link name="column_mid_m">
+      <pose>0 -2.8 5.0 0 0 0</pose>
+      <collision name="collision"><geometry><box><size>0.4 0.4 10.0</size></box></geometry></collision>
+      <visual name="visual">
+        <geometry><box><size>0.4 0.4 10.0</size></box></geometry>
+        <material><ambient>0.55 0.53 0.5 1</ambient><diffuse>0.6 0.58 0.55 1</diffuse></material>
+      </visual>
+    </link>
+
+    <!-- 3 floor slabs at 3m/6m/9m - no slab at the very top (10m, the
+         columns' own height): the top floor being open/unpoured is what
+         reads as "still under construction" rather than "a finished
+         building missing its walls". Sized slightly smaller than the
+         column footprint (7.6 x 5.6 against 8 x 6) so they sit between the
+         columns rather than overlapping them. -->
+    <link name="floor_slab_1">
+      <pose>0 0 3.0 0 0 0</pose>
+      <collision name="collision"><geometry><box><size>7.6 5.6 0.3</size></box></geometry></collision>
+      <visual name="visual">
+        <geometry><box><size>7.6 5.6 0.3</size></box></geometry>
+        <material><ambient>0.5 0.5 0.5 1</ambient><diffuse>0.55 0.55 0.55 1</diffuse></material>
+      </visual>
+    </link>
+    <link name="floor_slab_2">
+      <pose>0 0 6.0 0 0 0</pose>
+      <collision name="collision"><geometry><box><size>7.6 5.6 0.3</size></box></geometry></collision>
+      <visual name="visual">
+        <geometry><box><size>7.6 5.6 0.3</size></box></geometry>
+        <material><ambient>0.5 0.5 0.5 1</ambient><diffuse>0.55 0.55 0.55 1</diffuse></material>
+      </visual>
+    </link>
+    <link name="floor_slab_3">
+      <pose>0 0 9.0 0 0 0</pose>
+      <collision name="collision"><geometry><box><size>7.6 5.6 0.3</size></box></geometry></collision>
+      <visual name="visual">
+        <geometry><box><size>7.6 5.6 0.3</size></box></geometry>
+        <material><ambient>0.5 0.5 0.5 1</ambient><diffuse>0.55 0.55 0.55 1</diffuse></material>
+      </visual>
+    </link>
+  </model>
+</sdf>
