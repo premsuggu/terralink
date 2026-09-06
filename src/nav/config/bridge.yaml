@@ -1,0 +1,51 @@
+# ros_gz_bridge topic map for nav_ugv, mirroring emap/config/bridge.yaml's
+# structure/style. Gz-side topic names below were confirmed by actually
+# launching worlds/room_maze.world and inspecting `ign topic -l`/`-e` live,
+# not assumed - the DiffDrive plugin turned out to publish/subscribe on
+# LITERAL (unscoped) topic names (`/cmd_vel`, `/odometry`, per its <topic>/
+# <odom_topic> config in the world file), unlike iris_quad's
+# MulticopterVelocityControl/OdometryPublisher plugins, which auto-scope
+# under `/model/<name>/...` - a real, easy-to-get-wrong difference between
+# the two plugin families that would otherwise silently produce a bridge
+# that connects to nothing.
+
+# Nav2's controller_server -> smoother_server chain publishes its final
+# output on the literal topic `cmd_vel` (the INSTALLED nav2_bringup's own
+# navigation_launch.py remaps velocity_smoother's output straight to that
+# name - checked directly against the installed file, not assumed from
+# d3's own, apparently older/different, vendored copy). Since that would
+# collide with `emap_bridge`'s own `/cmd_vel` (the UAV's command topic),
+# `launch/nav_sim.launch.py` redirects it to `/nav2_cmd_vel` via `SetRemap`
+# before it ever reaches here - bridged straight from THAT name, no
+# twist_mux needed (unlike d3, this package has no joystick input to
+# arbitrate against).
+- ros_topic_name: "/nav2_cmd_vel"
+  gz_topic_name: "/cmd_vel"
+  ros_type_name: "geometry_msgs/msg/Twist"
+  gz_type_name: "ignition.msgs.Twist"
+  direction: ROS_TO_GZ
+
+- ros_topic_name: "/ugv/odom"
+  gz_topic_name: "/odometry"
+  ros_type_name: "nav_msgs/msg/Odometry"
+  gz_type_name: "ignition.msgs.Odometry"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/scan"
+  gz_topic_name: "/nav_ugv/scan"
+  ros_type_name: "sensor_msgs/msg/LaserScan"
+  gz_type_name: "ignition.msgs.LaserScan"
+  direction: GZ_TO_ROS
+
+# Ground-truth nav_ugv/odom -> nav_ugv/base_link, published directly by the
+# DiffDrive plugin (its own dedicated /model/nav_ugv/tf topic - confirmed
+# live, distinct from iris_quad's pattern of contributing to a generic
+# /model/<name>/pose topic). This is DEAD-RECKONING odom (integrated from
+# zero at spawn), NOT world-absolute like iris_quad's - see
+# launch/nav_sim.launch.py's static_transform_publisher for the fixed
+# offset that ties this into the same frame emap's map already uses.
+- ros_topic_name: "/tf"
+  gz_topic_name: "/model/nav_ugv/tf"
+  ros_type_name: "tf2_msgs/msg/TFMessage"
+  gz_type_name: "ignition.msgs.Pose_V"
+  direction: GZ_TO_ROS

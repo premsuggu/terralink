@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema-instance"?>
+<package format="3">
+  <name>nav</name>
+  <version>0.0.1</version>
+  <description>TerraLink nav - UAV-mapped-elevation-driven UGV navigation: emap's traversability layer classifies walkable space, a PRM plans through it, a UGV follows the result via Nav2</description>
+  <maintainer email="software.guild@smail.iitm.ac.in">TerraLink nav</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <depend>emap</depend>
+  <depend>rclpy</depend>
+  <depend>ros_gz_sim</depend>
+  <depend>ros_gz_bridge</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>grid_map_msgs</depend>
+  <depend>robot_state_publisher</depend>
+  <depend>xacro</depend>
+  <depend>nav2_bringup</depend>
+  <depend>python3-scipy</depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+  <test_depend>pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

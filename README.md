@@ -50,6 +50,18 @@ ros2 run teleop_twist_keyboard teleop_twist_keyboard
 
 ---
 
+## `nav` - UAV-mapped-elevation-driven UGV navigation
+
+**Package**: `nav` (`src/nav/`) - depends on `emap`. Classifies `emap`'s `traversability` layer into walkable/non-walkable space (replacing `src/d3`'s hardcoded pixel-color threshold), plans through it with a NumPy/SciPy port of `d3`'s own PRM algorithm, and drives the result with the same Nav2/DWB stack `d3` uses.
+
+**Status**: see `docs/work-docs/nav/IMPLEMENTATION_PLAN.md`. Mapping → classification → planning is live-verified; low-level UGV following needs Nav2 installed first (`sudo apt-get install ros-humble-navigation2 ros-humble-nav2-bringup` - not installed in this environment by default).
+
+```bash
+ros2 launch nav nav_sim.launch.py   # headless by default; headless:=false for GUI
+```
+
+---
+
 ## Quick Start
 
 ### Prerequisites (One-time)
@@ -115,6 +127,23 @@ ros2 launch emap uav_sim.launch.py headless:=true launch_rviz:=true world:=bump
 ros2 launch emap uav_sim.launch.py headless:=true
 ```
 
+### `nav` (Our UAV→UGV Navigation Pipeline)
+
+```bash
+# Requires Nav2 installed (see the section above)
+ros2 launch nav nav_sim.launch.py headless:=true goal_x:=1.7 goal_y:=-0.5
+```
+
+Then fly the UAV manually (see "Controlling the UAV" above) over enough of `room_maze.world` for `nav_ugv` to have a walkable path to the configured goal. `goal_x`/`goal_y` must land in genuinely open, wall-clear space - a point close to a wall reads `LETHAL` and will never be reachable no matter how long you wait (this is exactly what happened with an earlier default of `(4.0, 0.0)`, ~0.1m from a real wall - see `docs/work-docs/nav/step03_real_bugs_from_a_live_user_run.md`). Check any custom goal against a live-flown `/elevation_map` before relying on it.
+
+**Hands-off demo mode** - the UAV flies itself (a fixed patrol of hover waypoints, see `nav/uav_autopilot.py`) so nothing needs manual `/cmd_vel` control:
+
+```bash
+ros2 launch nav nav_sim.launch.py headless:=false autonomous_uav:=true goal_x:=1.7 goal_y:=-0.5
+```
+
+`headless:=false` here on purpose - the point of this mode is to watch it work. Give it a couple of minutes: Gazebo/Nav2/the UAV takeoff are staggered on purpose (a few seconds each - see `nav/launch/nav_sim.launch.py`'s docstring) so nothing starts probing for a robot that hasn't spawned yet.
+
 ### Direction 3: OpenCV PRM Baseline (Gazebo)
 
 ```bash
@@ -152,12 +181,19 @@ terralink/
 │   ├── d3/                               # Direction 3 baseline
 │   │   ├── my_bot/
 │   │   └── tutorial_interfaces/
-│   └── emap/                             # OUR active from-scratch elevation mapping
+│   ├── emap/                             # OUR active from-scratch elevation mapping
+│   │   ├── package.xml
+│   │   ├── config/elevation_mapping.yaml
+│   │   ├── launch/, models/, worlds/, rviz/
+│   │   └── emap/                         # elevation_map, fusion(+gpu), drift, traversability, ...
+│   └── nav/                              # OUR UAV-mapped-elevation-driven UGV navigation
 │       ├── package.xml
-│       ├── config/elevation_mapping.yaml
-│       ├── launch/, models/, worlds/, rviz/
-│       └── emap/                         # elevation_map, fusion(+gpu), drift, traversability, ...
-└── tests/emap/                  # Unit tests for emap
+│       ├── config/bridge.yaml, config/nav2_params.yaml
+│       ├── launch/, models/nav_ugv/, worlds/room_maze.world
+│       └── nav/                          # walkability, prm_planner, planner_node, waypoint_follower
+└── tests/
+    ├── emap/                    # Unit tests for emap
+    └── nav/                     # Unit tests for nav
 ```
 
 ---

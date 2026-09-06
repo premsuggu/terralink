@@ -56,3 +56,33 @@ def encode_layer_to_multiarray(array: np.ndarray) -> Float32MultiArray:
     # silently produces a transposed-looking map.
     msg.data = arr.flatten(order="F").tolist()
     return msg
+
+
+def decode_layer_from_multiarray(msg: Float32MultiArray) -> np.ndarray:
+    """Inverse of `encode_layer_to_multiarray`: reconstruct the (rows, cols)
+    NumPy array from one `GridMap.data` entry.
+
+    Reads `cols`/`rows` straight back out of the two `MultiArrayDimension`
+    entries (rather than assuming an order) so this stays correct even if
+    the encoder's dimension order is ever revisited - only the `order="F"`
+    reshape (the exact inverse of that function's `order="F"` flatten) is
+    load-bearing here.
+    """
+    cols = msg.layout.dim[0].size
+    rows = msg.layout.dim[1].size
+    return np.array(msg.data, dtype=np.float32).reshape((rows, cols), order="F")
+
+
+def decode_gridmap(msg) -> dict[str, np.ndarray]:
+    """Reconstruct every layer of a received `grid_map_msgs/GridMap` message
+    back into `{layer_name: (rows, cols) array}` - the consuming side of the
+    exact convention `encode_layer_to_multiarray` writes.
+
+    This is the ONE authoritative decoder for that convention, so that any
+    package subscribing to `/elevation_map` (this package's own future code,
+    or `nav`'s `planner_node.py`) reads it the same way rather than each
+    independently re-deriving the row/col/order convention by hand - a real
+    risk otherwise: a scratchpad debugging script earlier in this project's
+    history had to reverse-engineer this exact layout once already.
+    """
+    return {name: decode_layer_from_multiarray(layer) for name, layer in zip(msg.layers, msg.data)}

@@ -1,0 +1,252 @@
+<?xml version="1.0"?>
+<!-- See model.config for the full design rationale (adapted from d3's
+     robot_core.xacro + lidar.xacro, expressed as native Ignition SDF).
+     No <plugin> here - the DiffDrive actuation plugin is attached at
+     include time in worlds/room_maze.world, exactly like models/iris_quad's
+     motor plugins are (see that model's own model.config for the same
+     reasoning: keeps the model itself simulator-plugin-agnostic, only the
+     world that actually uses it decides how it's driven). -->
+<sdf version="1.6">
+  <model name="nav_ugv">
+    <link name="base_link">
+      <!-- Chassis center sits at wheel_radius + chassis_z/2 = 0.05 + 0.075
+           = 0.125m above the ground - just tall enough that the box's
+           bottom face clears the wheels' contact patch. -->
+      <pose>0 0 0.125 0 0 0</pose>
+      <inertial>
+        <mass>1.5</mass>
+        <inertia>
+          <ixx>0.0138</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.0138</iyy>
+          <iyz>0</iyz>
+          <izz>0.0225</izz>
+        </inertia>
+      </inertial>
+      <visual name="chassis_visual">
+        <geometry>
+          <box>
+            <size>0.3 0.3 0.15</size>
+          </box>
+        </geometry>
+        <material>
+          <ambient>1 1 1 1</ambient>
+          <diffuse>1 1 1 1</diffuse>
+          <specular>0.3 0.3 0.3 1</specular>
+        </material>
+      </visual>
+      <collision name="chassis_collision">
+        <geometry>
+          <box>
+            <size>0.3 0.3 0.15</size>
+          </box>
+        </geometry>
+      </collision>
+
+      <!-- Planar lidar, forward-and-up of chassis center - same role as
+           d3's laser_frame (lidar.xacro), now expressed as a native
+           `gpu_lidar` sensor rather than a separate link + Classic ray
+           sensor plugin. 360 samples over a full circle, 0.3-12m range -
+           matches d3's own scan parameters exactly (only the plugin
+           mechanism changed, not the sensor's own specs). -->
+      <visual name="lidar_visual">
+        <pose>0.1 0 0.095 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.05</radius>
+            <length>0.04</length>
+          </cylinder>
+        </geometry>
+        <material>
+          <ambient>0.6 0 0 1</ambient>
+          <diffuse>0.6 0 0 1</diffuse>
+        </material>
+      </visual>
+      <sensor name="lidar" type="gpu_lidar">
+        <pose>0.1 0 0.095 0 0 0</pose>
+        <topic>nav_ugv/scan</topic>
+        <update_rate>10</update_rate>
+        <always_on>true</always_on>
+        <visualize>false</visualize>
+        <lidar>
+          <scan>
+            <horizontal>
+              <samples>360</samples>
+              <resolution>1</resolution>
+              <min_angle>-3.14159</min_angle>
+              <max_angle>3.14159</max_angle>
+            </horizontal>
+            <vertical>
+              <samples>1</samples>
+              <resolution>1</resolution>
+              <min_angle>0</min_angle>
+              <max_angle>0</max_angle>
+            </vertical>
+          </scan>
+          <range>
+            <min>0.3</min>
+            <max>12.0</max>
+            <resolution>0.01</resolution>
+          </range>
+        </lidar>
+      </sensor>
+    </link>
+
+    <!-- Driven wheels: cylinder visual (looks like a wheel), sphere
+         collision (avoids a cylinder edge's line-contact friction/rolling
+         artifacts - the same collision-shape choice d3's own wheel links
+         made). Each wheel link's own <pose> already bakes in both its
+         position AND the 90-degree roll that makes its local Z axis (the
+         joint's rotation axis, below) point along the model's Y axis - the
+         same "rotate the link, keep the joint axis simple" pattern the
+         installed Ignition example vehicles use (see
+         /usr/share/ignition/ignition-gazebo6/worlds/log_record_keyboard.sdf). -->
+    <link name="left_wheel">
+      <pose>0 0.2 0.05 -1.5708 0 0</pose>
+      <inertial>
+        <mass>0.2</mass>
+        <inertia>
+          <ixx>0.00013</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.00013</iyy>
+          <iyz>0</iyz>
+          <izz>0.00025</izz>
+        </inertia>
+      </inertial>
+      <visual name="visual">
+        <geometry>
+          <cylinder>
+            <radius>0.05</radius>
+            <length>0.04</length>
+          </cylinder>
+        </geometry>
+        <material>
+          <ambient>0.2 0.2 1 1</ambient>
+          <diffuse>0.2 0.2 1 1</diffuse>
+        </material>
+      </visual>
+      <collision name="collision">
+        <geometry>
+          <sphere>
+            <radius>0.05</radius>
+          </sphere>
+        </geometry>
+      </collision>
+    </link>
+
+    <link name="right_wheel">
+      <pose>0 -0.2 0.05 -1.5708 0 0</pose>
+      <inertial>
+        <mass>0.2</mass>
+        <inertia>
+          <ixx>0.00013</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.00013</iyy>
+          <iyz>0</iyz>
+          <izz>0.00025</izz>
+        </inertia>
+      </inertial>
+      <visual name="visual">
+        <geometry>
+          <cylinder>
+            <radius>0.05</radius>
+            <length>0.04</length>
+          </cylinder>
+        </geometry>
+        <material>
+          <ambient>0.2 0.2 1 1</ambient>
+          <diffuse>0.2 0.2 1 1</diffuse>
+        </material>
+      </visual>
+      <collision name="collision">
+        <geometry>
+          <sphere>
+            <radius>0.05</radius>
+          </sphere>
+        </geometry>
+      </collision>
+    </link>
+
+    <!-- Passive caster: a low-friction sphere (see the <surface> block
+         below), same role as d3's caster_wheel link - a third contact point
+         that lets the two driven wheels alone determine heading (pure
+         differential drive), rather than fighting a rigidly-mounted third
+         wheel's own rolling constraint. -->
+    <link name="caster_wheel">
+      <pose>-0.13 0 0.03 0 0 0</pose>
+      <inertial>
+        <mass>0.1</mass>
+        <inertia>
+          <ixx>0.000036</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.000036</iyy>
+          <iyz>0</iyz>
+          <izz>0.000036</izz>
+        </inertia>
+      </inertial>
+      <visual name="visual">
+        <geometry>
+          <sphere>
+            <radius>0.03</radius>
+          </sphere>
+        </geometry>
+        <material>
+          <ambient>0.1 0.1 0.1 1</ambient>
+          <diffuse>0.1 0.1 0.1 1</diffuse>
+        </material>
+      </visual>
+      <collision name="collision">
+        <geometry>
+          <sphere>
+            <radius>0.03</radius>
+          </sphere>
+        </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>0.001</mu>
+              <mu2>0.001</mu2>
+            </ode>
+          </friction>
+        </surface>
+      </collision>
+    </link>
+
+    <joint name="left_wheel_joint" type="revolute">
+      <parent>base_link</parent>
+      <child>left_wheel</child>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit>
+          <!-- Effectively unlimited rotation - a driven wheel, not a hinge.
+               Same "very large but finite" convention the installed
+               Ignition example vehicles use, since SDF's <limit> is
+               mandatory on a revolute joint. -->
+          <lower>-1.79769e+308</lower>
+          <upper>1.79769e+308</upper>
+        </limit>
+      </axis>
+    </joint>
+
+    <joint name="right_wheel_joint" type="revolute">
+      <parent>base_link</parent>
+      <child>right_wheel</child>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit>
+          <lower>-1.79769e+308</lower>
+          <upper>1.79769e+308</upper>
+        </limit>
+      </axis>
+    </joint>
+
+    <joint name="caster_wheel_joint" type="ball">
+      <parent>base_link</parent>
+      <child>caster_wheel</child>
+    </joint>
+  </model>
+</sdf>

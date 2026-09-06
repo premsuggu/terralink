@@ -1,0 +1,820 @@
+<?xml version="1.0" ?>
+<!--
+  nav step 1: the maze/room test world for the UAV-maps-then-UGV-navigates
+  pipeline. Wall geometry ported (not literally copied - see below) from
+  src/d3/my_bot/worlds/roomWithObstacles.world's `room_with_walls_10x10`
+  model, per the plan to reuse d3's own proven test environment rather than
+  build a new one, since this milestone is about replacing d3's pixel-color
+  walkability classification, not its geometry.
+
+  What changed from the source file and why:
+  - d3's world targets Gazebo CLASSIC (`gazebo_ros`), which this project
+    doesn't have installed (see docs/work-docs/emap/IMPLEMENTATION_PLAN.md's
+    "Why restart" - the exact same reason `terralink_elevation` was
+    abandoned for `emap`). Only the WALL GEOMETRY was ported - the
+    surrounding physics/scene/GUI/sensor plugin boilerplate below is
+    `emap`'s own already-proven Ignition Fortress template (see
+    worlds/bump_test.world in the emap package), not d3's.
+  - Wall `<material>` blocks referenced Gazebo Classic's built-in
+    `file://media/materials/scripts/gazebo.material` script resource
+    (`Gazebo/Grey`), which doesn't resolve under Ignition - replaced with
+    plain `<ambient>/<diffuse>/<specular>` color values giving the same
+    flat gray look, no external resource needed.
+  - The light's pose is 0 0 500 (not the source file's 0 0 10) - the exact,
+    already-diagnosed bug from emap's step 11
+    (docs/work-docs/emap/step11_far_range_and_flight_safety_fixes.md):
+    under this environment's software-rendered Ogre2 depth camera, a light
+    posed inside the map's operational volume can occasionally be misread
+    as physical geometry. A directional light's illumination depends only
+    on <direction>, never <pose>, so moving it costs nothing and avoids
+    rediscovering that bug here.
+  - d3's own `<state>` snapshot, extra prop models (a table, construction
+    cones, cubes) baked into that one save, and its second embedded
+    `room_with_walls_10x10` copy inside that state block were all dropped -
+    none of those are real, load-bearing world content (see the
+    step doc for this milestone for the full explanation); this world is
+    deliberately just the wall maze, flat ground, and the UAV, matching the
+    plan's "prove the nav pipeline in isolation from terrain complexity".
+
+  The UGV is NOT included here - like d3's own UGV (spawned separately via
+  its own launch file, never embedded in the .world file), nav's vendored
+  UGV is spawned into this world by launch/nav_sim.launch.py via
+  `ros_gz_sim create`, not baked into this SDF.
+-->
+<sdf version="1.6">
+  <world name="room_maze">
+    <physics name="4ms" type="ignored">
+      <max_step_size>0.004</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+    <plugin filename="ignition-gazebo-physics-system" name="gz::sim::systems::Physics">
+    </plugin>
+    <plugin filename="ignition-gazebo-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster">
+    </plugin>
+    <plugin filename="ignition-gazebo-user-commands-system" name="gz::sim::systems::UserCommands">
+    </plugin>
+    <plugin filename="ignition-gazebo-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+
+    <!-- See uav_test.world for why this <gui> block (pinning the 3D view to
+         ogre2) needs to be here explicitly rather than left to whatever
+         local GUI config this machine happens to have. -->
+    <gui fullscreen="false">
+      <plugin filename="MinimalScene" name="3D View">
+        <ignition-gui>
+          <title>3D View</title>
+          <property type="bool" key="showTitleBar">false</property>
+          <property type="string" key="state">docked</property>
+        </ignition-gui>
+        <engine>ogre2</engine>
+        <scene>scene</scene>
+        <ambient_light>0.4 0.4 0.4</ambient_light>
+        <background_color>0.8 0.8 0.8</background_color>
+        <camera_pose>-10 -8 10 0 0.5 0.6</camera_pose>
+      </plugin>
+      <plugin filename="GzSceneManager" name="Scene Manager">
+        <ignition-gui>
+          <property key="resizable" type="bool">false</property>
+          <property key="width" type="double">5</property>
+          <property key="height" type="double">5</property>
+          <property key="state" type="string">floating</property>
+          <property key="showTitleBar" type="bool">false</property>
+        </ignition-gui>
+      </plugin>
+      <plugin filename="InteractiveViewControl" name="Interactive view control">
+        <ignition-gui>
+          <property key="resizable" type="bool">false</property>
+          <property key="width" type="double">5</property>
+          <property key="height" type="double">5</property>
+          <property key="state" type="string">floating</property>
+          <property key="showTitleBar" type="bool">false</property>
+        </ignition-gui>
+      </plugin>
+      <plugin filename="CameraTracking" name="Camera Tracking">
+        <ignition-gui>
+          <property key="resizable" type="bool">false</property>
+          <property key="width" type="double">5</property>
+          <property key="height" type="double">5</property>
+          <property key="state" type="string">floating</property>
+          <property key="showTitleBar" type="bool">false</property>
+        </ignition-gui>
+      </plugin>
+      <plugin filename="WorldControl" name="World control">
+        <ignition-gui>
+          <title>World control</title>
+          <property type="bool" key="showTitleBar">false</property>
+          <property type="bool" key="resizable">false</property>
+          <property type="double" key="height">72</property>
+          <property type="double" key="width">121</property>
+          <property type="double" key="z">1</property>
+          <property type="string" key="state">floating</property>
+          <anchors target="3D View">
+            <line own="left" target="left"/>
+            <line own="bottom" target="bottom"/>
+          </anchors>
+        </ignition-gui>
+        <play_pause>true</play_pause>
+        <step>true</step>
+        <start_paused>false</start_paused>
+        <use_event>true</use_event>
+      </plugin>
+      <plugin filename="WorldStats" name="World stats">
+        <ignition-gui>
+          <title>World stats</title>
+          <property type="bool" key="showTitleBar">false</property>
+          <property type="bool" key="resizable">false</property>
+          <property type="double" key="height">110</property>
+          <property type="double" key="width">290</property>
+          <property type="double" key="z">1</property>
+          <property type="string" key="state">floating</property>
+          <anchors target="3D View">
+            <line own="right" target="right"/>
+            <line own="bottom" target="bottom"/>
+          </anchors>
+        </ignition-gui>
+        <sim_time>true</sim_time>
+        <real_time>true</real_time>
+        <real_time_factor>true</real_time_factor>
+        <iterations>true</iterations>
+      </plugin>
+    </gui>
+
+    <light type="directional" name="sun">
+      <!-- z=500, not the source file's z=10 - see this file's top docstring. -->
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 500 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <attenuation>
+        <range>1000</range>
+        <constant>0.9</constant>
+        <linear>0.01</linear>
+        <quadratic>0.001</quadratic>
+      </attenuation>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.33 0.42 0.18 1</ambient>
+            <diffuse>0.45 0.55 0.25 1</diffuse>
+            <specular>0.1 0.1 0.1 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name='room_with_walls_10x10'>
+      <pose>-0.702521 -2.96884 0 0 -0 0</pose>
+      <link name='Wall_1'>
+        <collision name='Wall_1_Collision'>
+          <geometry>
+            <box>
+              <size>10 0.15 2.5</size>
+            </box>
+          </geometry>
+          <pose>0 0 1.25 0 -0 0</pose>
+          <max_contacts>10</max_contacts>
+          <surface>
+            <contact>
+              <ode/>
+            </contact>
+            <bounce/>
+            <friction>
+              <torsional>
+                <ode/>
+              </torsional>
+              <ode/>
+            </friction>
+          </surface>
+        </collision>
+        <visual name='Wall_1_Visual'>
+          <pose>0 0 1.25 0 -0 0</pose>
+          <geometry>
+            <box>
+              <size>10 0.15 2.5</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.7 0.7 0.7 1</ambient>
+            <diffuse>0.7 0.7 0.7 1</diffuse>
+            <specular>0.2 0.2 0.2 1</specular>
+          </material>
+          <meta>
+            <layer>0</layer>
+          </meta>
+        </visual>
+        <pose>-0.119159 -4.92736 0 0 -0 0</pose>
+        <self_collide>0</self_collide>
+        <enable_wind>0</enable_wind>
+        <kinematic>0</kinematic>
+      </link>
+      <link name='Wall_11'>
+        <collision name='Wall_11_Collision'>
+          <geometry>
+            <box>
+              <size>2.5 0.15 2.5</size>
+            </box>
+          </geometry>
+          <pose>0 0 1.25 0 -0 0</pose>
+          <max_contacts>10</max_contacts>
+          <surface>
+            <contact>
+              <ode/>
+            </contact>
+            <bounce/>
+            <friction>
+              <torsional>
+                <ode/>
+              </torsional>
+              <ode/>
+            </friction>
+          </surface>
+        </collision>
+        <visual name='Wall_11_Visual'>
+          <pose>0 0 1.25 0 -0 0</pose>
+          <geometry>
+            <box>
+              <size>2.5 0.15 2.5</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.7 0.7 0.7 1</ambient>
+            <diffuse>0.7 0.7 0.7 1</diffuse>
+            <specular>0.2 0.2 0.2 1</specular>
+          </material>
+          <meta>
+            <layer>0</layer>
+          </meta>
+        </visual>
+        <pose>-2.64666 3.75236 0 0 -0 -1.5708</pose>
+        <self_collide>0</self_collide>
+        <enable_wind>0</enable_wind>
+        <kinematic>0</kinematic>
+      </link>
+      <link name='Wall_16'>
+        <collision name='Wall_16_Collision'>
+          <geometry>
+            <box>
+              <size>2.5 0.15 2.5</size>
+            </box>
+          </geometry>
+          <pose>0 0 1.25 0 -0 0</pose>
+          <max_contacts>10</max_contacts>
+          <surface>
+            <contact>
+              <ode/>
+            </contact>
+            <bounce/>
+            <friction>
+              <torsional>
+                <ode/>
+              </torsional>
+              <ode/>
+            </friction>
+          </surface>
+        </collision>
+        <visual name='Wall_16_Visual'>
+          <pose>0 0 1.25 0 -0 0</pose>
+          <geometry>
+            <box>
+              <size>2.5 0.15 2.5</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.7 0.7 0.7 1</ambient>
+            <diffuse>0.7 0.7 0.7 1</diffuse>
+            <specular>0.2 0.2 0.2 1</specular>
+          </material>
+          <meta>
+            <layer>0</layer>
+          </meta>
+        </visual>
+        <pose>-3.84066 0.028362 0 0 -0 0</pose>
+        <self_collide>0</self_collide>
+        <enable_wind>0</enable_wind>
+        <kinematic>0</kinematic>
+      </link>
+      <link name='Wall_18'>
+        <collision name='Wall_18_Collision'>
+          <geometry>
+            <box>
+              <size>4 0.15 2.5</size>
+            </box>
+          </geometry>
+          <pose>0 0 1.25 0 -0 0</pose>
+          <max_contacts>10</max_contacts>
+          <surface>
+            <contact>
+              <ode/>
+            </contact>
+            <bounce/>
+            <friction>
+              <torsional>
+                <ode/>
+              </torsional>
+              <ode/>
+            </friction>
+          </surface>
+        </collision>
+        <visual name='Wall_18_Visual'>
+          <pose>0 0 1.25 0 -0 0</pose>
+          <geometry>
+            <box>
+              <size>4 0.15 2.5</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.7 0.7 0.7 1</ambient>
+            <diffuse>0.7 0.7 0.7 1</diffuse>
+            <specular>0.2 0.2 0.2 1</specular>
+          </material>
+          <meta>
+            <layer>0</layer>
+          </meta>
+        </visual>
+        <pose>-2.63516 -2.99164 0 0 -0 1.5708</pose>
+        <self_collide>0</self_collide>
+        <enable_wind>0</enable_wind>
+        <kinematic>0</kinematic>
+      </link>
+      <link name='Wall_2'>
+        <collision name='Wall_2_Collision'>
+          <geometry>
+            <box>
+              <size>10 0.15 2.5</size>
+            </box>
+          </geometry>
+          <pose>0 0 1.25 0 -0 0</pose>
+          <max_contacts>10</max_contacts>
+          <surface>
+            <contact>
+              <ode/>
+            </contact>
+            <bounce/>
+            <friction>
+              <torsional>
+                <ode/>
+              </torsional>
+              <ode/>
+            </friction>
+          </surface>
+        </collision>
+        <visual name='Wall_2_Visual'>
+          <pose>0 0 1.25 0 -0 0</pose>
+          <geometry>
+            <box>
+              <size>10 0.15 2.5</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.7 0.7 0.7 1</ambient>
+            <diffuse>0.7 0.7 0.7 1</diffuse>
+            <specular>0.2 0.2 0.2 1</specular>
+          </material>
+          <meta>
+            <layer>0</layer>
+          </meta>
+        </visual>
+        <pose>4.80584 -0.002362 0 0 -0 1.5708</pose>
+        <self_collide>0</self_collide>
+        <enable_wind>0</enable_wind>
+        <kinematic>0</kinematic>
+      </link>
+      <link name='Wall_24'>
+        <collision name='Wall_24_Collision'>
+          <geometry>
+            <box>
+              <size>6 0.15 2.5</size>
+            </box>
+          </geometry>
+          <pose>0 0 1.25 0 -0 0</pose>
+          <max_contacts>10</max_contacts>
+          <surface>
+            <contact>
+              <ode/>
+            </contact>
+            <bounce/>
+            <friction>
+              <torsional>
+                <ode/>
+              </torsional>
+              <ode/>
+            </friction>
+          </surface>
+        </collision>
+        <visual name='Wall_24_Visual'>
+          <pose>0 0 1.25 0 -0 0</pose>
+          <geometry>
+            <box>
+              <size>6 0.15 2.5</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.7 0.7 0.7 1</ambient>
+            <diffuse>0.7 0.7 0.7 1</diffuse>
+            <specular>0.2 0.2 0.2 1</specular>
+          </material>
+          <meta>
+            <layer>0</layer>
+          </meta>
+        </visual>
+        <pose>-0.243157 2.00236 0 0 -0 -1.5708</pose>
+        <self_collide>0</self_collide>
+        <enable_wind>0</enable_wind>
+        <kinematic>0</kinematic>
+      </link>
+      <link name='Wall_28'>
+        <collision name='Wall_28_Collision'>
+          <geometry>
+            <box>
+              <size>2.5 0.15 2.5</size>
+            </box>
+          </geometry>
+          <pose>0 0 1.25 0 -0 0</pose>
+          <max_contacts>10</max_contacts>
+          <surface>
+            <contact>
+              <ode/>
+            </contact>
+            <bounce/>
+            <friction>
+              <torsional>
+                <ode/>
+              </torsional>
+              <ode/>
+            </friction>
+          </surface>
+        </collision>
+        <visual name='Wall_28_Visual'>
+          <pose>0 0 1.25 0 -0 0</pose>
+          <geometry>
+            <box>
+              <size>2.5 0.15 2.5</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.7 0.7 0.7 1</ambient>
+            <diffuse>0.7 0.7 0.7 1</diffuse>
+            <specular>0.2 0.2 0.2 1</specular>
+          </material>
+          <meta>
+            <layer>0</layer>
+          </meta>
+        </visual>
+        <pose>-0.220157 -3.74164 0 0 -0 1.5708</pose>
+        <self_collide>0</self_collide>
+        <enable_wind>0</enable_wind>
+        <kinematic>0</kinematic>
+      </link>
+      <link name='Wall_3'>
+        <collision name='Wall_3_Collision'>
+          <geometry>
+            <box>
+              <size>10 0.15 2.5</size>
+            </box>
+          </geometry>
+          <pose>0 0 1.25 0 -0 0</pose>
+          <max_contacts>10</max_contacts>
+          <surface>
+            <contact>
+              <ode/>
+            </contact>
+            <bounce/>
+            <friction>
+              <torsional>
+                <ode/>
+              </torsional>
+              <ode/>
+            </friction>
+          </surface>
+        </collision>
+        <visual name='Wall_3_Visual'>
+          <pose>0 0 1.25 0 -0 0</pose>
+          <geometry>
+            <box>
+              <size>10 0.15 2.5</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.7 0.7 0.7 1</ambient>
+            <diffuse>0.7 0.7 0.7 1</diffuse>
+            <specular>0.2 0.2 0.2 1</specular>
+          </material>
+          <meta>
+            <layer>0</layer>
+          </meta>
+        </visual>
+        <pose>-0.119159 4.92264 0 0 -0 3.14159</pose>
+        <self_collide>0</self_collide>
+        <enable_wind>0</enable_wind>
+        <kinematic>0</kinematic>
+      </link>
+      <link name='Wall_36'>
+        <collision name='Wall_36_Collision'>
+          <geometry>
+            <box>
+              <size>3.5 0.15 2.5</size>
+            </box>
+          </geometry>
+          <pose>0 0 1.25 0 -0 0</pose>
+          <max_contacts>10</max_contacts>
+          <surface>
+            <contact>
+              <ode/>
+            </contact>
+            <bounce/>
+            <friction>
+              <torsional>
+                <ode/>
+              </torsional>
+              <ode/>
+            </friction>
+          </surface>
+        </collision>
+        <visual name='Wall_36_Visual'>
+          <pose>0 0 1.25 0 -0 0</pose>
+          <geometry>
+            <box>
+              <size>3.5 0.15 2.5</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.7 0.7 0.7 1</ambient>
+            <diffuse>0.7 0.7 0.7 1</diffuse>
+            <specular>0.2 0.2 0.2 1</specular>
+          </material>
+          <meta>
+            <layer>0</layer>
+          </meta>
+        </visual>
+        <pose>1.44334 0.476862 0 0 -0 0</pose>
+        <self_collide>0</self_collide>
+        <enable_wind>0</enable_wind>
+        <kinematic>0</kinematic>
+      </link>
+      <link name='Wall_4'>
+        <collision name='Wall_4_Collision'>
+          <geometry>
+            <box>
+              <size>10 0.15 2.5</size>
+            </box>
+          </geometry>
+          <pose>0 0 1.25 0 -0 0</pose>
+          <max_contacts>10</max_contacts>
+          <surface>
+            <contact>
+              <ode/>
+            </contact>
+            <bounce/>
+            <friction>
+              <torsional>
+                <ode/>
+              </torsional>
+              <ode/>
+            </friction>
+          </surface>
+        </collision>
+        <visual name='Wall_4_Visual'>
+          <pose>0 0 1.25 0 -0 0</pose>
+          <geometry>
+            <box>
+              <size>10 0.15 2.5</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.7 0.7 0.7 1</ambient>
+            <diffuse>0.7 0.7 0.7 1</diffuse>
+            <specular>0.2 0.2 0.2 1</specular>
+          </material>
+          <meta>
+            <layer>0</layer>
+          </meta>
+        </visual>
+        <pose>-5.04416 -0.002362 0 0 -0 -1.5708</pose>
+        <self_collide>0</self_collide>
+        <enable_wind>0</enable_wind>
+        <kinematic>0</kinematic>
+      </link>
+      <static>1</static>
+    </model>
+    <include>
+      <name>iris_quad</name>
+      <uri>model://iris_quad</uri>
+      <!-- REAL BUG FOUND LIVE: this used to spawn at z=3.5 ("well above the
+           walls, room to fly and see the maze"). MulticopterVelocityControl
+           gives ZERO thrust until something actually commands a velocity
+           (see the README's "Controlling the UAV" section) - so for
+           however many seconds pass before autonomous_uav's autopilot node
+           (or a person) sends the first command, the drone free-falls
+           uncontrolled. From 3.5m that's enough energy to bounce on impact
+           and land in a genuinely bad pose - confirmed live: one such fall
+           left it resting on its SIDE (a ~90 degree roll, not just yaw),
+           a configuration `MulticopterVelocityControl`'s attitude
+           controller can't recover from at all (its own thrust axis is no
+           longer pointing anywhere near "up") - completely stuck
+           regardless of any command sent afterward.
+
+           Every other emap world (uav_test.world, bump_test.world,
+           construction_site.world) spawns iris_quad right at/near ground
+           level (z=0.1) for exactly this reason - already the proven-safe
+           pattern this project uses everywhere else, deviated from here by
+           mistake. Restored: a fall of a few centimeters from z=0.1 has
+           nowhere near enough energy to tip the vehicle over, so there's
+           nothing left to "recover" from regardless of how long it takes
+           for control to start - autonomous_uav's autopilot node then
+           climbs to altitude itself under CONTROLLED flight (which is what
+           actually satisfies "start it in the air" safely, rather than an
+           uncontrolled mid-air spawn). -->
+      <pose>-0.7 -3.0 0.1 0 0 0</pose>
+
+      <!-- Per-rotor thrust/torque model. Constants are the Iris airframe's own
+           published values (PX4/PX4-SITL_gazebo-classic models/iris/iris.sdf.jinja),
+           reused here so the physics matches the vendored geometry. -->
+      <plugin filename="ignition-gazebo-multicopter-motor-model-system"
+        name="gz::sim::systems::MulticopterMotorModel">
+        <robotNamespace>iris_quad</robotNamespace>
+        <jointName>rotor_0_joint</jointName>
+        <linkName>rotor_0</linkName>
+        <turningDirection>ccw</turningDirection>
+        <timeConstantUp>0.0125</timeConstantUp>
+        <timeConstantDown>0.025</timeConstantDown>
+        <maxRotVelocity>1100</maxRotVelocity>
+        <motorConstant>5.84e-06</motorConstant>
+        <momentConstant>0.06</momentConstant>
+        <commandSubTopic>gazebo/command/motor_speed</commandSubTopic>
+        <motorNumber>0</motorNumber>
+        <rotorDragCoefficient>0.000175</rotorDragCoefficient>
+        <rollingMomentCoefficient>1e-06</rollingMomentCoefficient>
+        <motorSpeedPubTopic>motor_speed/0</motorSpeedPubTopic>
+        <rotorVelocitySlowdownSim>10</rotorVelocitySlowdownSim>
+        <motorType>velocity</motorType>
+      </plugin>
+      <plugin filename="ignition-gazebo-multicopter-motor-model-system"
+        name="gz::sim::systems::MulticopterMotorModel">
+        <robotNamespace>iris_quad</robotNamespace>
+        <jointName>rotor_1_joint</jointName>
+        <linkName>rotor_1</linkName>
+        <turningDirection>ccw</turningDirection>
+        <timeConstantUp>0.0125</timeConstantUp>
+        <timeConstantDown>0.025</timeConstantDown>
+        <maxRotVelocity>1100</maxRotVelocity>
+        <motorConstant>5.84e-06</motorConstant>
+        <momentConstant>0.06</momentConstant>
+        <commandSubTopic>gazebo/command/motor_speed</commandSubTopic>
+        <motorNumber>1</motorNumber>
+        <rotorDragCoefficient>0.000175</rotorDragCoefficient>
+        <rollingMomentCoefficient>1e-06</rollingMomentCoefficient>
+        <motorSpeedPubTopic>motor_speed/1</motorSpeedPubTopic>
+        <rotorVelocitySlowdownSim>10</rotorVelocitySlowdownSim>
+        <motorType>velocity</motorType>
+      </plugin>
+      <plugin filename="ignition-gazebo-multicopter-motor-model-system"
+        name="gz::sim::systems::MulticopterMotorModel">
+        <robotNamespace>iris_quad</robotNamespace>
+        <jointName>rotor_2_joint</jointName>
+        <linkName>rotor_2</linkName>
+        <turningDirection>cw</turningDirection>
+        <timeConstantUp>0.0125</timeConstantUp>
+        <timeConstantDown>0.025</timeConstantDown>
+        <maxRotVelocity>1100</maxRotVelocity>
+        <motorConstant>5.84e-06</motorConstant>
+        <momentConstant>0.06</momentConstant>
+        <commandSubTopic>gazebo/command/motor_speed</commandSubTopic>
+        <motorNumber>2</motorNumber>
+        <rotorDragCoefficient>0.000175</rotorDragCoefficient>
+        <rollingMomentCoefficient>1e-06</rollingMomentCoefficient>
+        <motorSpeedPubTopic>motor_speed/2</motorSpeedPubTopic>
+        <rotorVelocitySlowdownSim>10</rotorVelocitySlowdownSim>
+        <motorType>velocity</motorType>
+      </plugin>
+      <plugin filename="ignition-gazebo-multicopter-motor-model-system"
+        name="gz::sim::systems::MulticopterMotorModel">
+        <robotNamespace>iris_quad</robotNamespace>
+        <jointName>rotor_3_joint</jointName>
+        <linkName>rotor_3</linkName>
+        <turningDirection>cw</turningDirection>
+        <timeConstantUp>0.0125</timeConstantUp>
+        <timeConstantDown>0.025</timeConstantDown>
+        <maxRotVelocity>1100</maxRotVelocity>
+        <motorConstant>5.84e-06</motorConstant>
+        <momentConstant>0.06</momentConstant>
+        <commandSubTopic>gazebo/command/motor_speed</commandSubTopic>
+        <motorNumber>3</motorNumber>
+        <rotorDragCoefficient>0.000175</rotorDragCoefficient>
+        <rollingMomentCoefficient>1e-06</rollingMomentCoefficient>
+        <motorSpeedPubTopic>motor_speed/3</motorSpeedPubTopic>
+        <rotorVelocitySlowdownSim>10</rotorVelocitySlowdownSim>
+        <motorType>velocity</motorType>
+      </plugin>
+
+      <!-- Body-frame linear/angular velocity controller: closes the loop from a
+           commanded twist to the four rotors above. -->
+      <plugin filename="ignition-gazebo-multicopter-control-system"
+        name="gz::sim::systems::MulticopterVelocityControl">
+        <robotNamespace>iris_quad</robotNamespace>
+        <commandSubTopic>gazebo/command/twist</commandSubTopic>
+        <enableSubTopic>enable</enableSubTopic>
+        <comLinkName>base_link</comLinkName>
+        <velocityGain>2.7 2.7 2.7</velocityGain>
+        <attitudeGain>2 3 0.15</attitudeGain>
+        <angularRateGain>0.4 0.52 0.18</angularRateGain>
+        <maximumLinearAcceleration>2 2 2</maximumLinearAcceleration>
+
+        <rotorConfiguration>
+          <rotor>
+            <jointName>rotor_0_joint</jointName>
+            <forceConstant>5.84e-06</forceConstant>
+            <momentConstant>0.06</momentConstant>
+            <direction>1</direction>
+          </rotor>
+          <rotor>
+            <jointName>rotor_1_joint</jointName>
+            <forceConstant>5.84e-06</forceConstant>
+            <momentConstant>0.06</momentConstant>
+            <direction>1</direction>
+          </rotor>
+          <rotor>
+            <jointName>rotor_2_joint</jointName>
+            <forceConstant>5.84e-06</forceConstant>
+            <momentConstant>0.06</momentConstant>
+            <direction>-1</direction>
+          </rotor>
+          <rotor>
+            <jointName>rotor_3_joint</jointName>
+            <forceConstant>5.84e-06</forceConstant>
+            <momentConstant>0.06</momentConstant>
+            <direction>-1</direction>
+          </rotor>
+        </rotorConfiguration>
+      </plugin>
+
+      <!-- Explicit frame names (rather than the plugin's defaults) so they match
+           the model's own link name (base_link) used everywhere else in this file. -->
+      <plugin filename="ignition-gazebo-odometry-publisher-system"
+        name="ignition::gazebo::systems::OdometryPublisher">
+        <dimensions>3</dimensions>
+        <odom_frame>iris_quad/odom</odom_frame>
+        <robot_base_frame>iris_quad/base_link</robot_base_frame>
+      </plugin>
+    </include>
+
+    <!-- The UGV - see models/nav_ugv/model.config for why its actuation
+         plugin is attached here rather than baked into the model itself
+         (same pattern as iris_quad's motor plugins above).
+
+         REAL BUG FOUND LIVE: this was first placed at (-0.7, -3.0) - eyeballed
+         from the wall poses as "a corridor junction", but never actually
+         verified against a real flown map. It turned out to read
+         traversability=LETHAL (close enough to Wall_18/Wall_28's corner
+         for a real slope/step-height reading) - meaning nav_ugv could NEVER
+         get a valid PRM plan, because planner_node.py always plans FROM the
+         UGV's own current position, and a start point inside LETHAL space
+         is rejected outright (see prm_planner.py's docstring on this exact
+         design choice) - a permanent deadlock: it can't move because no
+         plan exists, and no plan exists because it hasn't moved off a
+         rejected cell. Confirmed by live-checking `/elevation_map` after a
+         real flight: (-0.7, -3.0) genuinely reads walkable=False, while
+         (-0.7, -4.5) - 1.5m further into the corridor - reads walkable=True
+         with a full ~0.7m clear margin in every direction. Moved here
+         instead - MUST match launch/nav_sim.launch.py's
+         `ugv_odom_static_tf` translation exactly (both are the single
+         source of truth for "where nav_ugv actually spawns"). -->
+    <include>
+      <name>nav_ugv</name>
+      <uri>model://nav_ugv</uri>
+      <pose>-0.7 -4.5 0.0 0 0 0</pose>
+
+      <plugin filename="ignition-gazebo-diff-drive-system"
+        name="gz::sim::systems::DiffDrive">
+        <left_joint>left_wheel_joint</left_joint>
+        <right_joint>right_wheel_joint</right_joint>
+        <wheel_separation>0.4</wheel_separation>
+        <wheel_radius>0.05</wheel_radius>
+        <topic>cmd_vel</topic>
+        <odom_topic>odometry</odom_topic>
+        <frame_id>nav_ugv/odom</frame_id>
+        <child_frame_id>nav_ugv/base_link</child_frame_id>
+        <odom_publish_frequency>30</odom_publish_frequency>
+      </plugin>
+    </include>
+  </world>
+</sdf>
