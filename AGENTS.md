@@ -23,8 +23,8 @@
 | Component | Package | Location | Status |
 |-----------|---------|----------|--------|
 | **Elevation Mapping** | `emap` | `src/emap/` | **Active - see `docs/work-docs/emap/`** |
+| **Navigation Core** | `nav` | `src/nav/` | **Active - see `docs/work-docs/nav/`** |
 | **Semantic Vision** | `terralink_semantic` | `src/terralink_semantic/` | Not started |
-| **Navigation Core** | `terralink_nav` | `src/terralink_nav/` | Not started |
 
 **Key Principles**:
 - ✅ New packages in `src/` (not `src/d<N>/`)
@@ -73,15 +73,6 @@ terralink/
     │       ├── plane_segmentation_ros2/   # Plane extraction
     │       └── sensor_processing/         # Semantic sensor integration
     │
-    ├── d2/                      # Direction 2: Semantic Vision (REFERENCE)
-    │   └── semantic_nav/        # Our ROS 2 package (C++/ONNX Runtime)
-    │       ├── src/             # Nodes: segmentation, costmap converter, launcher
-    │       ├── include/         # Headers
-    │       ├── config/          # YAML params, class costs
-    │       ├── launch/          # Launch files
-    │       ├── models/          # ONNX models (yolov8n-seg.onnx)
-    │       └── scripts/         # Export, benchmark scripts
-    │
     ├── d3/                      # Direction 3: OpenCV PRM Baseline (WORKING)
     │   ├── my_bot/              # Main UAV-UGV package
     │   │   ├── src/             # waypoints_server, waypoints_client, nav2_handler
@@ -92,23 +83,24 @@ terralink/
     │   │   └── worlds/          # Gazebo worlds
     │   └── tutorial_interfaces/ # GetWaypoints service definition
     │
-    └── emap/                    # OUR from-scratch elevation mapping (active)
+    └── nav/                       # OUR navigation core (active)
         ├── package.xml
+        ├── setup.py / setup.cfg
         ├── config/
-        │   └── elevation_mapping.yaml
+        │   ├── nav2_params.yaml
+        │   └── bridge.yaml
         ├── launch/
-        │   └── uav_sim.launch.py
-        ├── models/, worlds/, rviz/  # Gazebo assets
-        ├── emap/
-        │   ├── elevation_map.py          # Core ElevationMap class
-        │   ├── elevation_mapping_node.py # ROS 2 node
-        │   ├── fusion.py / fusion_gpu.py # CPU / GPU Bayesian fusion
-        │   ├── traversability.py         # Analytical traversability
-        │   ├── drift.py                  # Vertical drift compensation
-        │   ├── cmd_vel_watchdog.py        # UAV command-timeout safety node
-        │   └── utils/                    # coord_transform, gridmap_utils, tf_utils
-        └── (tests live in tests/emap/, not test/ - see below)
-```
+        │   └── nav_sim.launch.py
+        ├── models/nav_ugv/        # UGV SDF model
+        ├── worlds/room_maze.world
+        ├── resource/
+        └── nav/
+            ├── prm_planner.py         # PRM path planning
+            ├── autopilot.py           # UAV autonomous flight logic
+            ├── uav_autopilot_node.py  # UAV autopilot ROS node
+            ├── planner_node.py        # PRM planner ROS node
+            ├── waypoint_follower.py   # UGV waypoint following
+            └── walkability.py         # Traversability analysis
 See `docs/work-docs/emap/IMPLEMENTATION_PLAN.md` for the step-by-step build history.
 
 ---
@@ -155,6 +147,16 @@ colcon build --packages-select my_bot tutorial_interfaces
 colcon build --packages-select elevation_map_msgs elevation_mapping_cupy
 colcon build --packages-select semantic_nav
 ```
+
+### Build `nav` (our navigation core package)
+
+```bash
+source /opt/ros/humble/setup.bash
+colcon build --packages-select nav
+```
+See `docs/work-docs/nav/IMPLEMENTATION_PLAN.md` for full build/run/test instructions - it's kept current as the package evolves.
+
+---
 
 ### Build `emap` (our active elevation mapping package)
 
@@ -225,6 +227,40 @@ Full launch args, verification steps, and expected output are documented (and ke
 
 ---
 
+## How to Run (`nav` - our navigation core)
+
+```bash
+source /opt/ros/humble/setup.bash
+ros2 launch nav nav_sim.launch.py headless:=true autonomous_uav:=true
+```
+
+**Launch Arguments:**
+| Arg | Default | Description |
+|-----|---------|-------------|
+| `headless` | `true` | Run gz sim server-only (no GUI) |
+| `autonomous_uav` | `false` | UAV flies patrol waypoints to build map |
+| `goal_x` | `1.7` | UGV goal X (world frame) |
+| `goal_y` | `-0.5` | UGV goal Y (world frame) |
+
+**Launch Sequence (see `nav_sim.launch.py` docstring for full rationale):**
+| Time | Event |
+|------|-------|
+| 0s | Gazebo starts (`room_maze.world`) |
+| 5s | Bridges, TFs, elevation mapping, UAV autopilot start |
+| 9s | Nav2, PRM planner, UGV waypoint follower start |
+
+**Verification Checklist:**
+- [ ] Gazebo loads `room_maze.world`
+- [ ] UAV (`iris_quad`) and UGV (`nav_ugv`) visible
+- [ ] `/elevation_mapping_node/elevation_map` publishing GridMap
+- [ ] Nav2 costmap receives UGV lidar scans (no TF drops)
+- [ ] PRM planner finds path through traversable cells
+- [ ] UGV follows waypoints to goal
+
+Full details in `docs/work-docs/nav/IMPLEMENTATION_PLAN.md` and per-step docs.
+
+---
+
 ## How to Run (Direction 3 - Current Working Baseline)
 
 ### Full Simulation (Gazebo + UAV + UGV + Nav2 + PRM)
@@ -282,6 +318,9 @@ ros2 service list | grep waypoints    # Verify service available
 | `synthetic_pointcloud_tf_publisher.py` | elevation_mapping_cupy | Synthetic data generator (Direction 1) |
 | `semantic_segmentation_node` | semantic_nav | YOLOv8-seg ONNX inference (Direction 2) |
 | `costmap_converter_node` | semantic_nav | Semantic classes → Nav2 costmap (Direction 2) |
+| `planner_node` | nav | PRM planner ROS node |
+| `uav_autopilot_node` | nav | UAV autopilot ROS node |
+| `waypoint_follower` | nav | UGV waypoint following |
 
 ---
 
@@ -404,6 +443,16 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python3 -m pytest elevation_mapping_cupy/tests/
 colcon test --packages-select elevation_mapping_cupy --event-handlers console_direct+
 ```
 
+### `nav` Tests (our navigation core)
+
+```bash
+cd tests/nav
+python3 -m pytest -v
+```
+All algorithm-level tests (PRM planner, autopilot, walkability) live here and require no ROS/Gazebo - see `docs/work-docs/nav/IMPLEMENTATION_PLAN.md` for what each covers.
+
+---
+
 ### `emap` Tests (our active elevation mapping)
 
 ```bash
@@ -501,14 +550,12 @@ All algorithm-level tests (fusion, GPU fusion, drift compensation, traversabilit
 2. **Reference `src/d1/` for algorithms** - Study, understand, NEVER copy-paste
 3. **Each step = testable module** - Unit test before integration
 4. **Document everything** - Work-logs in `docs/work-logs/` with concept explanations
-5. **CPU-first, GPU-second** - Verify logic on NumPy, then port to CuPy
 
 ### Testing Discipline
 
 1. **Unit test per step** - `tests/emap/test_*.py`
 2. **No ROS in unit tests** - Pure algorithm verification
-3. **GPU vs CPU numerical match** - Verify kernel output matches CPU reference
-4. **Integration test with ROS** - After all unit tests pass
+3. **Integration test with ROS** - After all unit tests pass
 
 ### Documentation Standards
 
@@ -536,15 +583,22 @@ colcon build --packages-select semantic_nav --cmake-args -DCMAKE_BUILD_TYPE=Rele
  
 # Build emap (our active elevation mapping)
 colcon build --packages-select emap
- 
+
+# Build nav (our navigation core)
+colcon build --packages-select nav
+
 # Run Direction 1 - Synthetic Demo (WORKING @ 10 Hz)
 source install/local_setup.bash
 ros2 launch elevation_mapping_cupy synthetic_depth_demo.launch.py launch_rviz:=false
- 
+
 # Run emap
 source install/local_setup.bash
 ros2 launch emap uav_sim.launch.py headless:=true launch_rviz:=true world:=bump
- 
+
+# Run nav
+source install/local_setup.bash
+ros2 launch nav nav_sim.launch.py headless:=true autonomous_uav:=true
+
 # Run Direction 3 simulation
 source install/local_setup.bash
 ros2 launch my_bot launch_sim.launch.py
@@ -563,29 +617,73 @@ ros2 run rviz2 rviz2 -d $(ros2 pkg prefix elevation_mapping_cupy)/share/elevatio
  
 # RViz for emap (or pass launch_rviz:=true to the launch file above)
 ros2 run rviz2 rviz2 -d $(ros2 pkg prefix emap)/share/emap/rviz/elevation_mapping.rviz
+
+# RViz for nav (or use launch_rviz:=true in nav_sim.launch.py if added)
+ros2 run rviz2 rviz2 -d $(ros2 pkg prefix nav)/share/nav/rviz/nav.rviz
 ```
 ---
 
-## Important insutructions for agents
-- Make sure the codebase is well maintained and follows best practices interms of modularity, readability, documentation, and performance.
-- ALWAYS propose a plan for implementation before starting any task and get approval before proceeding.
-- INCLUDE all the technical details in the implementation plan, including any dependencies, libraries, or frameworks that will be used. You can also include important code snippets or pseudocode to illustrate your approach.
-- Every time a task is completed, ensure that the code is properly tested with unit tests and integration tests.
-- NEVER create test or debug related files in root directory. All test files should be placed in the tests/ directory.
-- NEVER push code to git unless explicitly instructed to do so.
-- After every task, UPDATE the documentation to reflect any changes made to the codebase.
-- Provide high-level documentation and detailed explanations (including technical details) separately in the docs/ in a very modular way.
-- Provide references to code snippets in the documentation wherever necessary.
-- NEVER assume anything and always ask for clarifications if any requirements or details are unclear.
-- ALWAYS use best practices for code quality, including but not limited to code reviews, static analysis, and adherence to coding standards.
-- Provide detailed EXPLANATIONS for all the concepts required to understand the codebase in form of documentation from SCRATCH and in a simple way such that beginners can also understand the concepts properly.
-- For concept explanations use `docs/learning/` and explain the detailed explanation for all concepts here including any pre-requisite concepts required to understand the codebase. 
-- USE coding examples wherever necessary to explain the concepts in a simple way.
-- If you lack priviliges to perform any task, inform the user and provide a detailed explanation of the steps the user to perform to complete the task.
-- When asked to debug or solve any issue related to simulation and incase you need to run the simulation run it headlessly and use the output logs for further analysis. Do not run any simulation in GUI mode unless neccessary. But at the same time u need to make sure things are working perfectly for simulation as well.
-- NEVER install unecessary packages or libraries in the system, unless explicitly mentioned. If by any chance you have installed it then remove it immediately and inform the user about it. 
+
+## Agent Guidelines
+
+### Code Quality & Maintenance
+- Ensure the codebase is well-maintained and follows best practices in terms of modularity, readability, documentation, and performance.
+- Always use best practices for code quality, including but not limited to:
+    - Code reviews before merging changes
+    - Static analysis tools for linting and type checking
+    - Adherence to established coding standards and conventions
+- Use coding examples wherever necessary to explain concepts in a simple and understandable way.
+
+### Planning & Implementation Process
+- **Before starting any task:** Always propose a detailed implementation plan and obtain explicit approval before proceeding.
+- **Implementation plan must include:**
+    - Clear description of the task objectives and scope
+    - All technical details (algorithms, data structures, design patterns)
+    - Complete list of dependencies, libraries, and frameworks that will be used
+    - Important code snippets or pseudocode to illustrate the approach
+    - Estimated timeline and potential risks or challenges
+    - After each implementation step, provide a summary of the changes made and any relevant code snippets or examples to illustrate the modifications.
+
+### Testing & Quality Assurance
+- After completing any task, ensure the code is properly tested with:
+    - Unit tests for individual components and functions
+    - Integration tests to verify interactions between modules
+    - All tests should pass before considering a task complete
+- **Important:** Never create test or debug related files in the root directory. All test files must be placed in the `tests/` directory with appropriate subdirectories matching the source structure.
+
+### Version Control & Deployment
+- **Never push code to git independently.** Only push code to git after obtaining explicit approval from the user.
+- Wait for user confirmation at each milestone before committing changes to the repository.
+
+### Documentation Standards
+- After each completed task, update the documentation to reflect all changes made to the codebase.
+- Provide documentation in a modular way:
+    - High-level documentation explaining overall concepts and workflows
+    - Detailed explanations with in-depth technical details
+    - All documentation should be placed in the `docs/` directory with clear organization
+    - Explanatory docs and work logs shall be maintained separately in modular way.
+- Always include references to relevant code snippets in the documentation.
+- Provide both conceptual explanations and practical examples to help users understand the codebase better. Provide clear explanations such that even a new developer can understand the codebase and its functionality.
+- I have created separate directories for GNN and TabNet documentation in the `docs/` folder. This is where we will maintain all the relevant documentation for these components.
+
+### Communication & Clarification
+- Never assume anything about requirements or implementation details.
+- Always ask for clarifications if any requirements, specifications, or details are unclear.
+- Request explicit approval before making architectural decisions or significant changes.
+
+### Dependency Management
+- Never install unnecessary packages or libraries in the system without explicit user permission.
+- If you have installed packages without prior permission, immediately inform the user with:
+    - A list of packages that were installed
+    - Reasons why they were needed
+    - A request for permission to keep or remove them
+- Follow up accordingly based on user feedback.
+
+### Privilege & Capability Limitations
+- If you lack the necessary privileges to perform any task, inform the user immediately.
+- Provide a detailed explanation of:
+    - What task requires elevated privileges
+    - Why those privileges are needed
+    - Step-by-step instructions for the user to complete the task manually
 
 ---
- 
-*This AGENTS.md reflects the modular three-direction architecture. Each direction in `src/d<N>/` builds and runs independently. Direction 3 is the current working baseline.*
-

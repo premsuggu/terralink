@@ -11,7 +11,7 @@
       <real_time_update_rate>1000</real_time_update_rate>
     </physics>
     
-    <!-- Ground plane with Gaussian bump (will be replaced with mesh) -->
+    <!-- Ground plane with Gaussian bump -->
     <model name="ground_plane">
       <static>true</static>
       <link name="link">
