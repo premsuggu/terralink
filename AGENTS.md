@@ -657,6 +657,7 @@ ros2 run rviz2 rviz2 -d $(ros2 pkg prefix nav)/share/nav/rviz/nav.rviz
 
 ### Documentation Standards
 - After each completed task, update the documentation to reflect all changes made to the codebase.
+- Continuously update `docs/work-docs/` and `docs/STATUS.md` so that we are consistently tracking the current state of the project and its progress.
 - Provide documentation in a modular way:
     - High-level documentation explaining overall concepts and workflows
     - Detailed explanations with in-depth technical details
