@@ -4,7 +4,7 @@
   <name>emap</name>
   <version>0.0.1</version>
   <description>TerraLink emap - from-scratch UAV elevation mapping, rebuilt on Ignition Gazebo Fortress + ros_gz</description>
-  <maintainer email="software.guild@smail.iitm.ac.in">TerraLink emap</maintainer>
+  <maintainer email="ce23b117@smail.iitm.ac.in">TerraLink emap</maintainer>
   <license>MIT</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
