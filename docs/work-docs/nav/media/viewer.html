@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TerraLink 3D PLY Viewer (Elevation & Voxel Maps)</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: #12151c;
+      color: #e2e8f0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+    header {
+      background: #1a202c;
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid #2d3748;
+      z-index: 10;
+    }
+    .title-area h1 {
+      font-size: 1.15rem;
+      font-weight: 600;
+      color: #63b3ed;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .title-area span {
+      font-size: 0.82rem;
+      color: #a0aec0;
+      font-weight: normal;
+    }
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .btn {
+      background: #2b6cb0;
+      color: white;
+      border: none;
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn:hover {
+      background: #3182ce;
+    }
+    .btn-secondary {
+      background: #2d3748;
+      color: #cbd5e0;
+    }
+    .btn-secondary:hover {
+      background: #4a5568;
+    }
+    input[type="file"] {
+      display: none;
+    }
+    .slider-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.82rem;
+      color: #cbd5e0;
+    }
+    .slider-group input {
+      width: 80px;
+      accent-color: #4299e1;
+      cursor: pointer;
+    }
+    #viewport {
+      flex: 1;
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+    #dropzone {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(18, 21, 28, 0.88);
+      backdrop-filter: blur(4px);
+      z-index: 5;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    #dropzone.hidden {
+      display: none;
+    }
+    #dropzone.dragover {
+      background: rgba(43, 108, 176, 0.3);
+      border: 3px dashed #63b3ed;
+    }
+    .drop-box {
+      border: 2px dashed #4a5568;
+      border-radius: 12px;
+      padding: 40px 60px;
+      text-align: center;
+      background: #1a202c;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+    }
+    .drop-box h2 {
+      font-size: 1.3rem;
+      margin-bottom: 8px;
+      color: #e2e8f0;
+    }
+    .drop-box p {
+      font-size: 0.9rem;
+      color: #a0aec0;
+      margin-bottom: 20px;
+    }
+    .info-card {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      background: rgba(26, 32, 44, 0.9);
+      backdrop-filter: blur(8px);
+      border: 1px solid #2d3748;
+      border-radius: 8px;
+      padding: 14px 18px;
+      font-size: 0.82rem;
+      max-width: 340px;
+      z-index: 4;
+      line-height: 1.5;
+    }
+    .info-card h3 {
+      font-size: 0.9rem;
+      color: #63b3ed;
+      margin-bottom: 6px;
+      border-bottom: 1px solid #2d3748;
+      padding-bottom: 4px;
+    }
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 3px;
+    }
+    .stat-label {
+      color: #a0aec0;
+    }
+    .stat-val {
+      font-family: monospace;
+      color: #f7fafc;
+    }
+    .legend-card {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      background: rgba(26, 32, 44, 0.9);
+      backdrop-filter: blur(8px);
+      border: 1px solid #2d3748;
+      border-radius: 8px;
+      padding: 14px 18px;
+      font-size: 0.82rem;
+      z-index: 4;
+      line-height: 1.5;
+    }
+    .legend-card h3 {
+      font-size: 0.9rem;
+      color: #63b3ed;
+      margin-bottom: 6px;
+      border-bottom: 1px solid #2d3748;
+      padding-bottom: 4px;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+    .color-swatch {
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+    .instructions {
+      position: absolute;
+      top: 15px;
+      left: 20px;
+      background: rgba(26, 32, 44, 0.85);
+      border: 1px solid #2d3748;
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-size: 0.78rem;
+      color: #a0aec0;
+      z-index: 4;
+      pointer-events: none;
+    }
+  </style>
+  <!-- Three.js + OrbitControls from CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body>
+  <header>
+    <div class="title-area">
+      <h1>🗺️ TerraLink 3D PLY Viewer</h1>
+      <span id="current-file-name">Drag & drop elevation_map.ply or voxel_map.ply</span>
+    </div>
+    <div class="controls">
+      <label class="btn" for="file-input">
+        📂 Open .ply File
+      </label>
+      <input type="file" id="file-input" accept=".ply">
+      
+      <div class="slider-group">
+        <span>Point Size:</span>
+        <input type="range" id="size-slider" min="0.01" max="0.30" step="0.01" value="0.06">
+        <span id="size-val">0.06m</span>
+      </div>
+
+      <button class="btn btn-secondary" id="btn-topdown">Top-Down (2D)</button>
+      <button class="btn btn-secondary" id="btn-perspective">3D Iso</button>
+      <button class="btn btn-secondary" id="btn-reset">Reset View</button>
+    </div>
+  </header>
+
+  <div id="viewport">
+    <div class="instructions">
+      🖱️ <b>Rotate:</b> Left Click + Drag &nbsp;|&nbsp; <b>Pan:</b> Right Click + Drag &nbsp;|&nbsp; <b>Zoom:</b> Scroll
+    </div>
+
+    <div id="dropzone">
+      <div class="drop-box">
+        <h2>Drop your .ply file here</h2>
+        <p>Supports <b>elevation_map.ply</b> (2.5D UAV map) and <b>voxel_map.ply</b> (3D UGV map)</p>
+        <button class="btn" onclick="document.getElementById('file-input').click()">Or Browse from Computer</button>
+      </div>
+    </div>
+
+    <div class="info-card" id="info-card" style="display:none;">
+      <h3>📊 Map Metadata</h3>
+      <div class="stat-row"><span class="stat-label">File:</span><span class="stat-val" id="meta-name">-</span></div>
+      <div class="stat-row"><span class="stat-label">Points:</span><span class="stat-val" id="meta-count">-</span></div>
+      <div class="stat-row"><span class="stat-label">X Range:</span><span class="stat-val" id="meta-x">-</span></div>
+      <div class="stat-row"><span class="stat-label">Y Range:</span><span class="stat-val" id="meta-y">-</span></div>
+      <div class="stat-row"><span class="stat-label">Z Range:</span><span class="stat-val" id="meta-z">-</span></div>
+    </div>
+
+    <div class="legend-card" id="legend-card" style="display:none;">
+      <h3 id="legend-title">Color Legend</h3>
+      <div id="legend-content"></div>
+    </div>
+  </div>
+
+  <script>
+    // --- Three.js Scene Setup ---
+    const viewport = document.getElementById('viewport');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x12151c);
+
+    // ROS Convention: Z is UP!
+    const camera = new THREE.PerspectiveCamera(50, viewport.clientWidth / viewport.clientHeight, 0.1, 500);
+    camera.up.set(0, 0, 1);
+    camera.position.set(0, -10, 8);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(viewport.clientWidth, viewport.clientHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    viewport.appendChild(renderer.domElement);
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+
+    // Grid on Z=0 ground plane (1m spacing)
+    const gridHelper = new THREE.GridHelper(20, 20, 0x4a5568, 0x2d3748);
+    gridHelper.rotation.x = Math.PI / 2; // Orient grid so normal is +Z (ROS ground)
+    scene.add(gridHelper);
+
+    // Axes helper: Red = +X (Forward), Green = +Y (Left), Blue = +Z (Up)
+    const axesHelper = new THREE.AxesHelper(1.5);
+    scene.add(axesHelper);
+
+    let currentPointCloud = null;
+    let mapCenter = new THREE.Vector3(0, 0, 0);
+    let mapBoundingBox = null;
+
+    // --- Window Resize ---
+    window.addEventListener('resize', () => {
+      camera.aspect = viewport.clientWidth / viewport.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(viewport.clientWidth, viewport.clientHeight);
+    });
+
+    // --- Animation Loop ---
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    // --- Fast Pure-JS ASCII PLY Parser ---
+    function parseAsciiPLY(text) {
+      const lines = text.split('\n');
+      let inHeader = true;
+      let vertexCount = 0;
+      let properties = [];
+      const positions = [];
+      const colors = [];
+
+      let minX = Infinity, maxX = -Infinity;
+      let minY = Infinity, maxY = -Infinity;
+      let minZ = Infinity, maxZ = -Infinity;
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line || line.startsWith('comment')) continue;
+
+        if (inHeader) {
+          if (line.startsWith('element vertex')) {
+            vertexCount = parseInt(line.split(/\s+/)[2], 10);
+          } else if (line.startsWith('property')) {
+            const parts = line.split(/\s+/);
+            properties.push(parts[parts.length - 1]);
+          } else if (line === 'end_header') {
+            inHeader = false;
+          }
+          continue;
+        }
+
+        const tokens = line.split(/\s+/);
+        if (tokens.length >= 3) {
+          const x = parseFloat(tokens[0]);
+          const y = parseFloat(tokens[1]);
+          const z = parseFloat(tokens[2]);
+
+          if (isNaN(x) || isNaN(y) || isNaN(z)) continue;
+
+          positions.push(x, y, z);
+          if (x < minX) minX = x; if (x > maxX) maxX = x;
+          if (y < minY) minY = y; if (y > maxY) maxY = y;
+          if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+
+          if (tokens.length >= 6) {
+            colors.push(
+              parseFloat(tokens[3]) / 255.0,
+              parseFloat(tokens[4]) / 255.0,
+              parseFloat(tokens[5]) / 255.0
+            );
+          } else {
+            colors.push(0.8, 0.8, 0.8);
+          }
+        }
+      }
+
+      return {
+        positions: new Float32Array(positions),
+        colors: new Float32Array(colors),
+        count: positions.length / 3,
+        bounds: { minX, maxX, minY, maxY, minZ, maxZ }
+      };
+    }
+
+    // --- Render Point Cloud ---
+    function loadAndDisplayPLY(content, filename) {
+      const parsed = parseAsciiPLY(content);
+      if (parsed.count === 0) {
+        alert("No valid points found in " + filename);
+        return;
+      }
+
+      // Remove existing cloud if any
+      if (currentPointCloud) {
+        scene.remove(currentPointCloud);
+        currentPointCloud.geometry.dispose();
+        currentPointCloud.material.dispose();
+      }
+
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.BufferAttribute(parsed.positions, 3));
+      geometry.setAttribute('color', new THREE.BufferAttribute(parsed.colors, 3));
+
+      const pointSize = parseFloat(document.getElementById('size-slider').value);
+      const material = new THREE.PointsMaterial({
+        size: pointSize,
+        vertexColors: true,
+        sizeAttenuation: true
+      });
+
+      currentPointCloud = new THREE.Points(geometry, material);
+      scene.add(currentPointCloud);
+
+      // Center camera on point cloud center
+      const b = parsed.bounds;
+      mapBoundingBox = b;
+      mapCenter = new THREE.Vector3((b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2, (b.minZ + b.maxZ) / 2);
+
+      controls.target.copy(mapCenter);
+      const span = Math.max(b.maxX - b.minX, b.maxY - b.minY, 4.0);
+      camera.position.set(mapCenter.x, mapCenter.y - span * 1.5, mapCenter.z + span * 1.2);
+      camera.lookAt(mapCenter);
+
+      // Update UI
+      document.getElementById('dropzone').classList.add('hidden');
+      document.getElementById('current-file-name').textContent = filename;
+      document.getElementById('info-card').style.display = 'block';
+      document.getElementById('legend-card').style.display = 'block';
+
+      document.getElementById('meta-name').textContent = filename;
+      document.getElementById('meta-count').textContent = parsed.count.toLocaleString();
+      document.getElementById('meta-x').textContent = `${b.minX.toFixed(2)} to ${b.maxX.toFixed(2)}m`;
+      document.getElementById('meta-y').textContent = `${b.minY.toFixed(2)} to ${b.maxY.toFixed(2)}m`;
+      document.getElementById('meta-z').textContent = `${b.minZ.toFixed(2)} to ${b.maxZ.toFixed(2)}m`;
+
+      // Legend setup
+      const legendTitle = document.getElementById('legend-title');
+      const legendContent = document.getElementById('legend-content');
+      if (filename.toLowerCase().includes('voxel')) {
+        legendTitle.textContent = "Height (3D Voxels)";
+        legendContent.innerHTML = `
+          <div class="legend-item"><div class="color-swatch" style="background: rgb(255, 40, 0);"></div><span>Tunnel Roof / High (~1.0m)</span></div>
+          <div class="legend-item"><div class="color-swatch" style="background: rgb(40, 200, 40);"></div><span>Mid Height (~0.5m)</span></div>
+          <div class="legend-item"><div class="color-swatch" style="background: rgb(0, 40, 255);"></div><span>Ground / Low (~0.0m)</span></div>
+        `;
+      } else {
+        legendTitle.textContent = "Traversability (Elevation)";
+        legendContent.innerHTML = `
+          <div class="legend-item"><div class="color-swatch" style="background: rgb(40, 200, 40);"></div><span>Walkable / Easy</span></div>
+          <div class="legend-item"><div class="color-swatch" style="background: rgb(230, 200, 40);"></div><span>Difficult / Ramp</span></div>
+          <div class="legend-item"><div class="color-swatch" style="background: rgb(220, 40, 40);"></div><span>Lethal / Blocked / Tunnel Roof</span></div>
+        `;
+      }
+    }
+
+    // --- File Handlers ---
+    function handleFile(file) {
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        loadAndDisplayPLY(e.target.result, file.name);
+      };
+      reader.readAsText(file);
+    }
+
+    const fileInput = document.getElementById('file-input');
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files.length > 0) handleFile(e.target.files[0]);
+    });
+
+    const dropzone = document.getElementById('dropzone');
+    ['dragenter', 'dragover'].forEach(name => {
+      window.addEventListener(name, (e) => {
+        e.preventDefault();
+        dropzone.classList.remove('hidden');
+        dropzone.classList.add('dragover');
+      });
+    });
+
+    ['dragleave', 'drop'].forEach(name => {
+      window.addEventListener(name, (e) => {
+        e.preventDefault();
+        dropzone.classList.remove('dragover');
+      });
+    });
+
+    window.addEventListener('drop', (e) => {
+      e.preventDefault();
+      if (e.dataTransfer.files.length > 0) {
+        handleFile(e.dataTransfer.files[0]);
+      }
+    });
+
+    // --- Controls Listeners ---
+    const sizeSlider = document.getElementById('size-slider');
+    const sizeVal = document.getElementById('size-val');
+    sizeSlider.addEventListener('input', (e) => {
+      const val = parseFloat(e.target.value);
+      sizeVal.textContent = val.toFixed(2) + 'm';
+      if (currentPointCloud) {
+        currentPointCloud.material.size = val;
+      }
+    });
+
+    document.getElementById('btn-topdown').addEventListener('click', () => {
+      if (!mapCenter) return;
+      const span = mapBoundingBox ? Math.max(mapBoundingBox.maxX - mapBoundingBox.minX, mapBoundingBox.maxY - mapBoundingBox.minY) : 8;
+      camera.position.set(mapCenter.x, mapCenter.y, mapCenter.z + span * 1.5);
+      controls.target.copy(mapCenter);
+      camera.up.set(0, 1, 0); // Point camera northward
+    });
+
+    document.getElementById('btn-perspective').addEventListener('click', () => {
+      if (!mapCenter) return;
+      const span = mapBoundingBox ? Math.max(mapBoundingBox.maxX - mapBoundingBox.minX, mapBoundingBox.maxY - mapBoundingBox.minY) : 8;
+      camera.up.set(0, 0, 1);
+      camera.position.set(mapCenter.x, mapCenter.y - span * 1.3, mapCenter.z + span * 1.0);
+      controls.target.copy(mapCenter);
+    });
+
+    document.getElementById('btn-reset').addEventListener('click', () => {
+      if (!mapCenter) return;
+      document.getElementById('btn-perspective').click();
+    });
+
+    // Try automatic fetch if opened via local HTTP server
+    window.addEventListener('DOMContentLoaded', () => {
+      if (window.location.protocol.startsWith('http')) {
+        fetch('elevation_map.ply')
+          .then(res => res.ok ? res.text() : null)
+          .then(text => {
+            if (text) loadAndDisplayPLY(text, 'elevation_map.ply');
+          })
+          .catch(() => {});
+      }
+    });
+  </script>
+</body>
+</html>

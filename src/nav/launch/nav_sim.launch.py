@@ -207,8 +207,32 @@ def generate_launch_description():
     # standard, documented way to redirect a topic inside a launch file you
     # don't own. Scoped to a GroupAction so it only affects nodes started
     # inside this specific include, not the rest of this launch file.
+    #
+    # REAL BUG FOUND LIVE (fixed here): the single SetRemap below only ever
+    # redirected the SOURCE name `/cmd_vel` - which matches controller_server's
+    # own raw output (its remappings list is `[('cmd_vel', 'cmd_vel_nav'), ...]`,
+    # so its resolved source name really is `/cmd_vel`, correctly caught).
+    # velocity_smoother's FINAL, smoothed output is a DIFFERENT internal name,
+    # `cmd_vel_smoothed` (remapped by nav2_bringup's own installed launch file
+    # straight to literal `cmd_vel` - see the comment above) - a SetRemap
+    # keyed on `/cmd_vel` never matches that different source name at all, so
+    # velocity_smoother's real output sailed straight through to the literal,
+    # unnamespaced `/cmd_vel` topic exactly as originally feared, undoing the
+    # fix this whole block was written to be. Confirmed live
+    # (`ros2 node info /velocity_smoother` showing `/cmd_vel` as an actual
+    # publisher, and `emap_bridge` - the ONLY other subscriber - forwarding
+    # every UGV velocity command straight to `/iris_quad/gazebo/command/twist`,
+    # the UAV's own flight controller): this is very likely a real, direct
+    # contributor to "the UAV moves uselessly" behavior seen live during
+    # autonomous_uav runs, since a stray Twist meant for a ground robot
+    # (nonzero linear.y, zero angular - a diff-drive shape no UAV patrol
+    # logic would ever produce) is exactly what was observed reaching it.
+    # Fixed with a second, more specific SetRemap catching the actual
+    # colliding internal name directly, rather than the name one level
+    # upstream of it.
     nav2_launch = GroupAction([
         SetRemap(src='/cmd_vel', dst='/nav2_cmd_vel'),
+        SetRemap(src='cmd_vel_smoothed', dst='/nav2_cmd_vel_smoothed'),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource([os.path.join(
                 get_package_share_directory('nav2_bringup'), 'launch', 'navigation_launch.py')]),

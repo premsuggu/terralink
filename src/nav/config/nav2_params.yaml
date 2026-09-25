@@ -112,16 +112,24 @@ controller_server:
       debug_trajectory_details: True
       min_vel_x: 0.0
       min_vel_y: 0.0
-      max_vel_x: 0.26
+      # Raised from the original TurtleBot3-Burger-style 0.26 m/s default -
+      # at that speed, confirming a multi-meter tunnel crossing took several
+      # real minutes even with the simulation running healthily, which made
+      # it hard to tell "working but slow" apart from "stuck" when watching
+      # live. 0.6 m/s / 1.4 rad/s is still well within what this small
+      # diff-drive box + DWB can track smoothly (nothing about the physics
+      # or planning logic depends on the old speed), it just gets to the
+      # same, already-verified-correct answer faster to watch.
+      max_vel_x: 0.6
       max_vel_y: 0.0
-      max_vel_theta: 1.0
+      max_vel_theta: 1.4
       min_speed_xy: 0.0
-      max_speed_xy: 0.26
+      max_speed_xy: 0.6
       min_speed_theta: 0.0
-      acc_lim_x: 2.5
+      acc_lim_x: 3.5
       acc_lim_y: 0.0
-      acc_lim_theta: 3.2
-      decel_lim_x: -2.5
+      acc_lim_theta: 4.0
+      decel_lim_x: -3.5
       decel_lim_y: 0.0
       decel_lim_theta: -3.2
       vx_samples: 20
@@ -291,10 +299,16 @@ velocity_smoother:
     smoothing_frequency: 20.0
     scale_velocities: False
     feedback: "OPEN_LOOP"
-    max_velocity: [0.26, 0.0, 1.0]
-    min_velocity: [-0.26, 0.0, -1.0]
-    max_accel: [2.5, 0.0, 3.2]
-    max_decel: [-2.5, 0.0, -3.2]
+    # Kept in lockstep with FollowPath's DWB limits above (line ~113) - this
+    # is the LAST gate cmd_vel passes through before reaching the robot, so
+    # if this stays lower than DWB's own ceiling, DWB's planning would be
+    # for nothing: every command gets clamped back down to whatever's set
+    # here regardless. Same 0.26->0.6 m/s / 1.0->1.4 rad/s speed-up reasoning
+    # as above.
+    max_velocity: [0.6, 0.0, 1.4]
+    min_velocity: [-0.6, 0.0, -1.4]
+    max_accel: [3.5, 0.0, 4.0]
+    max_decel: [-3.5, 0.0, -4.0]
     odom_topic: "/ugv/odom"
     odom_duration: 0.1
     deadband_velocity: [0.0, 0.0, 0.0]

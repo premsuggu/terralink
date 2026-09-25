@@ -1,0 +1,653 @@
+<?xml version="1.0" ?>
+<!--
+  nav step 5: a test world built specifically to exercise the frontier-aware
+  tunnel-navigation capability (see
+  docs/work-docs/nav/step05_frontier_tunnel_navigation.md) - a real, concrete
+  case of the limitation that work solves: emap's UAV maps the world from
+  directly overhead, so a structure that occludes the ground from above (a
+  culvert, tunnel, or roofed passage) leaves everything underneath it
+  permanently `is_valid=False`, no matter how thoroughly the surrounding
+  area gets scanned. Without frontier mode, that reads as a solid wall to
+  the planner - here it is deliberately made the ONLY route between the UGV's
+  start point and its goal, so a live run either proves the capability works
+  or clearly fails trying.
+
+  Physics/scene/GUI/sensor plugin boilerplate is copied from
+  worlds/room_maze.world (itself emap's own already-proven Ignition Fortress
+  template) - nothing new needed there, including the z=500 light pose (see
+  that file's own docstring for the real depth-camera-misreads-a-light bug
+  this avoids).
+
+  --- Layout ---
+  One room, x in [-6, 6], y in [-4, 4], standard 2.5m-tall/0.15m-thick walls
+  (same construction as room_maze.world's own walls). A partition wall at
+  x=0 splits it into "room A" (x<0, the UGV's start side) and "room B" (x>0,
+  the goal side), but the partition does NOT span the full width - it stops
+  at y=+/-0.7, leaving a 1.4m-wide gap. That gap is filled, not left open,
+  by a semi-cylindrical tunnel (see the 'tunnel' model below) whose hollow
+  interior is the only way through - the partition wall's two segments and
+  the tunnel's own arch meet flush at y=+/-0.7, so there is no way to walk
+  from room A to room B without physically passing through the tunnel's
+  interior at ground level.
+
+  --- The tunnel model ---
+  A true SDF primitive for "hollow half-cylinder" doesn't exist, so - same
+  "self-authored from primitive boxes, no mesh" approach emap's
+  construction_site.world building_frame model already used - the arch is
+  approximated with 7 flat box segments, each tangent to a circle of radius
+  0.7m at its own segment's midpoint angle, extruded 1.5m along X (the
+  tunnel's own axis - the direction a robot actually drives through it).
+  Left OPEN at both ends (x=-0.75 and x=+0.75) on purpose - those are the
+  tunnel's two mouths.
+
+  The math (worked out once, then baked in as literal numbers below - see
+  the per-segment pose comments): for N=7 segments spanning a semicircle
+  (180 degrees) of radius R=0.7m, segment i's midpoint angle is
+  theta_i = (i + 0.5) * (180/7) degrees; each segment's local Y/Z position
+  is (R*cos(theta_i), R*sin(theta_i)) (theta measured from the +Y axis
+  toward +Z, so theta=0 is the ground-level mouth on the +Y side, theta=90
+  is the very top of the arch, theta=180 is the ground-level mouth on the
+  -Y side); each segment is rolled (rotated about its own local X axis, the
+  tunnel's length axis) by (theta_i - 90 degrees) so its flat face sits
+  tangent to the circle at that point, with its "width" axis lying along
+  the arc. Segment width is the chord length for that arc slice
+  (2*R*sin(dtheta/2)) scaled up ~12% so adjacent segments overlap slightly
+  rather than leaving a seam a depth camera could see a sliver of true
+  floor through.
+
+  --- Start/goal visual markers ---
+  Two non-colliding markers (visual-only links, no <collision> at all - so
+  they cannot be mistaken for real obstacles by anything, camera or lidar)
+  mark the UGV's spawn point (green) and the nav goal (red), so a human
+  watching the GUI can immediately see both without cross-referencing launch
+  arguments against this file.
+-->
+<sdf version="1.6">
+  <world name="tunnel_test">
+    <physics name="4ms" type="ignored">
+      <max_step_size>0.004</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+    <plugin filename="ignition-gazebo-physics-system" name="gz::sim::systems::Physics">
+    </plugin>
+    <plugin filename="ignition-gazebo-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster">
+    </plugin>
+    <plugin filename="ignition-gazebo-user-commands-system" name="gz::sim::systems::UserCommands">
+    </plugin>
+    <plugin filename="ignition-gazebo-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+
+    <gui fullscreen="false">
+      <plugin filename="MinimalScene" name="3D View">
+        <ignition-gui>
+          <title>3D View</title>
+          <property type="bool" key="showTitleBar">false</property>
+          <property type="string" key="state">docked</property>
+        </ignition-gui>
+        <engine>ogre2</engine>
+        <scene>scene</scene>
+        <ambient_light>0.4 0.4 0.4</ambient_light>
+        <background_color>0.8 0.8 0.8</background_color>
+        <camera_pose>-9 -8 8 0 0.5 0.6</camera_pose>
+      </plugin>
+      <plugin filename="GzSceneManager" name="Scene Manager">
+        <ignition-gui>
+          <property key="resizable" type="bool">false</property>
+          <property key="width" type="double">5</property>
+          <property key="height" type="double">5</property>
+          <property key="state" type="string">floating</property>
+          <property key="showTitleBar" type="bool">false</property>
+        </ignition-gui>
+      </plugin>
+      <plugin filename="InteractiveViewControl" name="Interactive view control">
+        <ignition-gui>
+          <property key="resizable" type="bool">false</property>
+          <property key="width" type="double">5</property>
+          <property key="height" type="double">5</property>
+          <property key="state" type="string">floating</property>
+          <property key="showTitleBar" type="bool">false</property>
+        </ignition-gui>
+      </plugin>
+      <plugin filename="CameraTracking" name="Camera Tracking">
+        <ignition-gui>
+          <property key="resizable" type="bool">false</property>
+          <property key="width" type="double">5</property>
+          <property key="height" type="double">5</property>
+          <property key="state" type="string">floating</property>
+          <property key="showTitleBar" type="bool">false</property>
+        </ignition-gui>
+      </plugin>
+      <plugin filename="WorldControl" name="World control">
+        <ignition-gui>
+          <title>World control</title>
+          <property type="bool" key="showTitleBar">false</property>
+          <property type="bool" key="resizable">false</property>
+          <property type="double" key="height">72</property>
+          <property type="double" key="width">121</property>
+          <property type="double" key="z">1</property>
+          <property type="string" key="state">floating</property>
+          <anchors target="3D View">
+            <line own="left" target="left"/>
+            <line own="bottom" target="bottom"/>
+          </anchors>
+        </ignition-gui>
+        <play_pause>true</play_pause>
+        <step>true</step>
+        <start_paused>false</start_paused>
+        <use_event>true</use_event>
+      </plugin>
+      <plugin filename="WorldStats" name="World stats">
+        <ignition-gui>
+          <title>World stats</title>
+          <property type="bool" key="showTitleBar">false</property>
+          <property type="bool" key="resizable">false</property>
+          <property type="double" key="height">110</property>
+          <property type="double" key="width">290</property>
+          <property type="double" key="z">1</property>
+          <property type="string" key="state">floating</property>
+          <anchors target="3D View">
+            <line own="right" target="right"/>
+            <line own="bottom" target="bottom"/>
+          </anchors>
+        </ignition-gui>
+        <sim_time>true</sim_time>
+        <real_time>true</real_time>
+        <real_time_factor>true</real_time_factor>
+        <iterations>true</iterations>
+      </plugin>
+    </gui>
+
+    <light type="directional" name="sun">
+      <!-- z=500 - see this file's top docstring / room_maze.world's own
+           docstring for the real depth-camera-misreads-a-light bug this avoids. -->
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 500 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <attenuation>
+        <range>1000</range>
+        <constant>0.9</constant>
+        <linear>0.01</linear>
+        <quadratic>0.001</quadratic>
+      </attenuation>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.33 0.42 0.18 1</ambient>
+            <diffuse>0.45 0.55 0.25 1</diffuse>
+            <specular>0.1 0.1 0.1 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Outer room: x in [-6,6], y in [-4,4]. Same wall construction as
+         room_maze.world (box collision+visual, plain ambient/diffuse color
+         instead of a Classic-only material script). -->
+    <model name="tunnel_room">
+      <static>true</static>
+      <pose>0 0 0 0 0 0</pose>
+      <link name="wall_north">
+        <pose>0 4 1.25 0 0 0</pose>
+        <collision name="collision"><geometry><box><size>12.15 0.15 2.5</size></box></geometry></collision>
+        <visual name="visual">
+          <geometry><box><size>12.15 0.15 2.5</size></box></geometry>
+          <material><ambient>0.7 0.7 0.7 1</ambient><diffuse>0.7 0.7 0.7 1</diffuse><specular>0.2 0.2 0.2 1</specular></material>
+        </visual>
+      </link>
+      <link name="wall_south">
+        <pose>0 -4 1.25 0 0 0</pose>
+        <collision name="collision"><geometry><box><size>12.15 0.15 2.5</size></box></geometry></collision>
+        <visual name="visual">
+          <geometry><box><size>12.15 0.15 2.5</size></box></geometry>
+          <material><ambient>0.7 0.7 0.7 1</ambient><diffuse>0.7 0.7 0.7 1</diffuse><specular>0.2 0.2 0.2 1</specular></material>
+        </visual>
+      </link>
+      <link name="wall_east">
+        <pose>6 0 1.25 0 0 1.5708</pose>
+        <collision name="collision"><geometry><box><size>8 0.15 2.5</size></box></geometry></collision>
+        <visual name="visual">
+          <geometry><box><size>8 0.15 2.5</size></box></geometry>
+          <material><ambient>0.7 0.7 0.7 1</ambient><diffuse>0.7 0.7 0.7 1</diffuse><specular>0.2 0.2 0.2 1</specular></material>
+        </visual>
+      </link>
+      <link name="wall_west">
+        <pose>-6 0 1.25 0 0 1.5708</pose>
+        <collision name="collision"><geometry><box><size>8 0.15 2.5</size></box></geometry></collision>
+        <visual name="visual">
+          <geometry><box><size>8 0.15 2.5</size></box></geometry>
+          <material><ambient>0.7 0.7 0.7 1</ambient><diffuse>0.7 0.7 0.7 1</diffuse><specular>0.2 0.2 0.2 1</specular></material>
+        </visual>
+      </link>
+
+      <!-- Partition wall at x=0, split around the y in [-0.7, 0.7] gap the
+           tunnel plugs (see top docstring - 0.7m is the tunnel arch's own
+           radius, so these meet it flush with no leftover opening). -->
+      <link name="partition_north">
+        <!-- Spans y in [0.7, 4]: length 3.3, centered at y=2.35. -->
+        <pose>0 2.35 1.25 0 0 1.5708</pose>
+        <collision name="collision"><geometry><box><size>3.3 0.15 2.5</size></box></geometry></collision>
+        <visual name="visual">
+          <geometry><box><size>3.3 0.15 2.5</size></box></geometry>
+          <material><ambient>0.6 0.6 0.6 1</ambient><diffuse>0.6 0.6 0.6 1</diffuse><specular>0.2 0.2 0.2 1</specular></material>
+        </visual>
+      </link>
+      <link name="partition_south">
+        <!-- Spans y in [-4, -0.7]: length 3.3, centered at y=-2.35. -->
+        <pose>0 -2.35 1.25 0 0 1.5708</pose>
+        <collision name="collision"><geometry><box><size>3.3 0.15 2.5</size></box></geometry></collision>
+        <visual name="visual">
+          <geometry><box><size>3.3 0.15 2.5</size></box></geometry>
+          <material><ambient>0.6 0.6 0.6 1</ambient><diffuse>0.6 0.6 0.6 1</diffuse><specular>0.2 0.2 0.2 1</specular></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- The tunnel: 7 flat box segments approximating a semicircular arch
+         of radius 0.7m, extruded 1.5m along X (open at x=-0.75/+0.75 - the
+         two mouths). Per-segment pose = (0, R*cos(theta_i), R*sin(theta_i),
+         theta_i - 90deg, 0, 0) - see this file's top docstring for the
+         derivation. Segment width 0.349m (chord 0.312m x ~1.12 overlap
+         factor) so neighboring segments overlap slightly rather than
+         leaving a seam. Distinct dark material so it visually reads as a
+         separate structure (a culvert), not just "more wall". -->
+    <model name="tunnel">
+      <static>true</static>
+      <pose>0 0 0 0 0 0</pose>
+      <link name="arch_segment_0">
+        <pose>0 0.6824 0.1558 -1.34640 0 0</pose>
+        <collision name="collision"><geometry><box><size>1.5 0.349 0.05</size></box></geometry></collision>
+        <visual name="visual">
+          <geometry><box><size>1.5 0.349 0.05</size></box></geometry>
+          <material><ambient>0.25 0.22 0.18 1</ambient><diffuse>0.3 0.27 0.22 1</diffuse><specular>0.1 0.1 0.1 1</specular></material>
+        </visual>
+      </link>
+      <link name="arch_segment_1">
+        <pose>0 0.5473 0.4364 -0.89760 0 0</pose>
+        <collision name="collision"><geometry><box><size>1.5 0.349 0.05</size></box></geometry></collision>
+        <visual name="visual">
+          <geometry><box><size>1.5 0.349 0.05</size></box></geometry>
+          <material><ambient>0.25 0.22 0.18 1</ambient><diffuse>0.3 0.27 0.22 1</diffuse><specular>0.1 0.1 0.1 1</specular></material>
+        </visual>
+      </link>
+      <link name="arch_segment_2">
+        <pose>0 0.3037 0.6307 -0.44880 0 0</pose>
+        <collision name="collision"><geometry><box><size>1.5 0.349 0.05</size></box></geometry></collision>
+        <visual name="visual">
+          <geometry><box><size>1.5 0.349 0.05</size></box></geometry>
+          <material><ambient>0.25 0.22 0.18 1</ambient><diffuse>0.3 0.27 0.22 1</diffuse><specular>0.1 0.1 0.1 1</specular></material>
+        </visual>
+      </link>
+      <link name="arch_segment_3">
+        <!-- The very top of the arch (theta=90deg, roll=0) - the segment
+             directly under the UAV when it flies straight over the tunnel. -->
+        <pose>0 0 0.7 0 0 0</pose>
+        <collision name="collision"><geometry><box><size>1.5 0.349 0.05</size></box></geometry></collision>
+        <visual name="visual">
+          <geometry><box><size>1.5 0.349 0.05</size></box></geometry>
+          <material><ambient>0.25 0.22 0.18 1</ambient><diffuse>0.3 0.27 0.22 1</diffuse><specular>0.1 0.1 0.1 1</specular></material>
+        </visual>
+      </link>
+      <link name="arch_segment_4">
+        <pose>0 -0.3037 0.6307 0.44880 0 0</pose>
+        <collision name="collision"><geometry><box><size>1.5 0.349 0.05</size></box></geometry></collision>
+        <visual name="visual">
+          <geometry><box><size>1.5 0.349 0.05</size></box></geometry>
+          <material><ambient>0.25 0.22 0.18 1</ambient><diffuse>0.3 0.27 0.22 1</diffuse><specular>0.1 0.1 0.1 1</specular></material>
+        </visual>
+      </link>
+      <link name="arch_segment_5">
+        <pose>0 -0.5473 0.4364 0.89760 0 0</pose>
+        <collision name="collision"><geometry><box><size>1.5 0.349 0.05</size></box></geometry></collision>
+        <visual name="visual">
+          <geometry><box><size>1.5 0.349 0.05</size></box></geometry>
+          <material><ambient>0.25 0.22 0.18 1</ambient><diffuse>0.3 0.27 0.22 1</diffuse><specular>0.1 0.1 0.1 1</specular></material>
+        </visual>
+      </link>
+      <link name="arch_segment_6">
+        <pose>0 -0.6824 0.1558 1.34640 0 0</pose>
+        <collision name="collision"><geometry><box><size>1.5 0.349 0.05</size></box></geometry></collision>
+        <visual name="visual">
+          <geometry><box><size>1.5 0.349 0.05</size></box></geometry>
+          <material><ambient>0.25 0.22 0.18 1</ambient><diffuse>0.3 0.27 0.22 1</diffuse><specular>0.1 0.1 0.1 1</specular></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Start marker (green) - matches the UGV's own spawn pose below
+         exactly. Visual-only: no <collision> at all, so nothing (camera,
+         lidar, or the robots themselves) can ever treat it as a real
+         obstacle.
+
+         REAL BUG FOUND LIVE: an earlier version of this marker was a 1m-TALL
+         cylinder (radius 0.25, length 1.0, centered at z=0.5). Having no
+         <collision> only means the PHYSICS engine ignores it - the depth
+         CAMERA still renders it like any other visible geometry, and
+         happily reports its TOP surface (z=1.0) as "the ground" to
+         everything below it. Confirmed live: `/elevation_map` read
+         elevation~1.0 at both markers' exact (x,y), even though the real
+         ground there is flat at z=0 - a tall marker isn't just a visual
+         aid, it's an undetected fake 1m obstacle from the mapping
+         pipeline's point of view. Fixed by flattening it to a thin disc
+         (length=0.02, resting essentially flush with the ground) - still
+         clearly visible from the GUI/top-down view as a bright colored
+         circle, but only a 2cm bump (well under compute_traversability's
+         own max_step=0.15 threshold), so it reads as flat/EASY terrain
+         instead of a fake tower - the same class of bug as emap's own
+         step11 "a light posed inside the operational volume gets misread
+         as geometry by this environment's software-rendered depth camera". -->
+    <model name="start_marker">
+      <static>true</static>
+      <pose>-3.0 0.0 0.01 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry><cylinder><radius>0.35</radius><length>0.02</length></cylinder></geometry>
+          <material>
+            <ambient>0 1 0 0.9</ambient>
+            <diffuse>0 1 0 0.9</diffuse>
+            <emissive>0 0.6 0 1</emissive>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Goal marker (red) - matches waypoint_follower's goal_x/goal_y
+         launch arguments for this demo exactly (see launch/tunnel_demo.launch.py).
+         Same flattened-disc fix as start_marker above. -->
+    <model name="goal_marker">
+      <static>true</static>
+      <pose>3.0 0.0 0.01 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry><cylinder><radius>0.35</radius><length>0.02</length></cylinder></geometry>
+          <material>
+            <ambient>1 0 0 0.9</ambient>
+            <diffuse>1 0 0 0.9</diffuse>
+            <emissive>0.6 0 0 1</emissive>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <include>
+      <name>iris_quad</name>
+      <uri>model://iris_quad</uri>
+      <!-- Near-ground spawn (see room_maze.world's own docstring for the
+           real free-fall/tip-over bug this convention avoids) - room A
+           side, but offset 1.5m in Y from the UGV's own spawn point below.
+
+           REAL BUG FOUND LIVE: an earlier version of this file spawned the
+           UAV at the EXACT same (x, y) as the UGV (both at (-3.0, 0.0)) -
+           the two robots' collision geometry physically overlapped at
+           spawn, and the resulting contact impulse tipped the UAV over
+           (confirmed live: its odometry orientation quaternion read
+           roughly (x=0.97, y=-0.18, z=0.16, w=0.02) - a huge roll, not a
+           level hover - while `/cmd_vel` kept commanding a normal climb
+           the whole time; a rolled-over multirotor's thrust axis no longer
+           points anywhere near "up", so no amount of correct control logic
+           could recover it, same class of bug as room_maze.world's own
+           z=3.5-spawn free-fall issue, just triggered by a different root
+           cause). Fixed by simply not spawning two robots on top of each
+           other - 1.5m of clearance in Y is comfortably more than either
+           robot's own footprint. -->
+      <pose>-3.0 1.5 0.1 0 0 0</pose>
+
+      <plugin filename="ignition-gazebo-multicopter-motor-model-system"
+        name="gz::sim::systems::MulticopterMotorModel">
+        <robotNamespace>iris_quad</robotNamespace>
+        <jointName>rotor_0_joint</jointName>
+        <linkName>rotor_0</linkName>
+        <turningDirection>ccw</turningDirection>
+        <timeConstantUp>0.0125</timeConstantUp>
+        <timeConstantDown>0.025</timeConstantDown>
+        <maxRotVelocity>1100</maxRotVelocity>
+        <motorConstant>5.84e-06</motorConstant>
+        <momentConstant>0.06</momentConstant>
+        <commandSubTopic>gazebo/command/motor_speed</commandSubTopic>
+        <motorNumber>0</motorNumber>
+        <rotorDragCoefficient>0.000175</rotorDragCoefficient>
+        <rollingMomentCoefficient>1e-06</rollingMomentCoefficient>
+        <motorSpeedPubTopic>motor_speed/0</motorSpeedPubTopic>
+        <rotorVelocitySlowdownSim>10</rotorVelocitySlowdownSim>
+        <motorType>velocity</motorType>
+      </plugin>
+      <plugin filename="ignition-gazebo-multicopter-motor-model-system"
+        name="gz::sim::systems::MulticopterMotorModel">
+        <robotNamespace>iris_quad</robotNamespace>
+        <jointName>rotor_1_joint</jointName>
+        <linkName>rotor_1</linkName>
+        <turningDirection>ccw</turningDirection>
+        <timeConstantUp>0.0125</timeConstantUp>
+        <timeConstantDown>0.025</timeConstantDown>
+        <maxRotVelocity>1100</maxRotVelocity>
+        <motorConstant>5.84e-06</motorConstant>
+        <momentConstant>0.06</momentConstant>
+        <commandSubTopic>gazebo/command/motor_speed</commandSubTopic>
+        <motorNumber>1</motorNumber>
+        <rotorDragCoefficient>0.000175</rotorDragCoefficient>
+        <rollingMomentCoefficient>1e-06</rollingMomentCoefficient>
+        <motorSpeedPubTopic>motor_speed/1</motorSpeedPubTopic>
+        <rotorVelocitySlowdownSim>10</rotorVelocitySlowdownSim>
+        <motorType>velocity</motorType>
+      </plugin>
+      <plugin filename="ignition-gazebo-multicopter-motor-model-system"
+        name="gz::sim::systems::MulticopterMotorModel">
+        <robotNamespace>iris_quad</robotNamespace>
+        <jointName>rotor_2_joint</jointName>
+        <linkName>rotor_2</linkName>
+        <turningDirection>cw</turningDirection>
+        <timeConstantUp>0.0125</timeConstantUp>
+        <timeConstantDown>0.025</timeConstantDown>
+        <maxRotVelocity>1100</maxRotVelocity>
+        <motorConstant>5.84e-06</motorConstant>
+        <momentConstant>0.06</momentConstant>
+        <commandSubTopic>gazebo/command/motor_speed</commandSubTopic>
+        <motorNumber>2</motorNumber>
+        <rotorDragCoefficient>0.000175</rotorDragCoefficient>
+        <rollingMomentCoefficient>1e-06</rollingMomentCoefficient>
+        <motorSpeedPubTopic>motor_speed/2</motorSpeedPubTopic>
+        <rotorVelocitySlowdownSim>10</rotorVelocitySlowdownSim>
+        <motorType>velocity</motorType>
+      </plugin>
+      <plugin filename="ignition-gazebo-multicopter-motor-model-system"
+        name="gz::sim::systems::MulticopterMotorModel">
+        <robotNamespace>iris_quad</robotNamespace>
+        <jointName>rotor_3_joint</jointName>
+        <linkName>rotor_3</linkName>
+        <turningDirection>cw</turningDirection>
+        <timeConstantUp>0.0125</timeConstantUp>
+        <timeConstantDown>0.025</timeConstantDown>
+        <maxRotVelocity>1100</maxRotVelocity>
+        <motorConstant>5.84e-06</motorConstant>
+        <momentConstant>0.06</momentConstant>
+        <commandSubTopic>gazebo/command/motor_speed</commandSubTopic>
+        <motorNumber>3</motorNumber>
+        <rotorDragCoefficient>0.000175</rotorDragCoefficient>
+        <rollingMomentCoefficient>1e-06</rollingMomentCoefficient>
+        <motorSpeedPubTopic>motor_speed/3</motorSpeedPubTopic>
+        <rotorVelocitySlowdownSim>10</rotorVelocitySlowdownSim>
+        <motorType>velocity</motorType>
+      </plugin>
+
+      <plugin filename="ignition-gazebo-multicopter-control-system"
+        name="gz::sim::systems::MulticopterVelocityControl">
+        <robotNamespace>iris_quad</robotNamespace>
+        <commandSubTopic>gazebo/command/twist</commandSubTopic>
+        <enableSubTopic>enable</enableSubTopic>
+        <comLinkName>base_link</comLinkName>
+        <velocityGain>2.7 2.7 2.7</velocityGain>
+        <attitudeGain>2 3 0.15</attitudeGain>
+        <angularRateGain>0.4 0.52 0.18</angularRateGain>
+        <maximumLinearAcceleration>2 2 2</maximumLinearAcceleration>
+        <rotorConfiguration>
+          <rotor>
+            <jointName>rotor_0_joint</jointName>
+            <forceConstant>5.84e-06</forceConstant>
+            <momentConstant>0.06</momentConstant>
+            <direction>1</direction>
+          </rotor>
+          <rotor>
+            <jointName>rotor_1_joint</jointName>
+            <forceConstant>5.84e-06</forceConstant>
+            <momentConstant>0.06</momentConstant>
+            <direction>1</direction>
+          </rotor>
+          <rotor>
+            <jointName>rotor_2_joint</jointName>
+            <forceConstant>5.84e-06</forceConstant>
+            <momentConstant>0.06</momentConstant>
+            <direction>-1</direction>
+          </rotor>
+          <rotor>
+            <jointName>rotor_3_joint</jointName>
+            <forceConstant>5.84e-06</forceConstant>
+            <momentConstant>0.06</momentConstant>
+            <direction>-1</direction>
+          </rotor>
+        </rotorConfiguration>
+      </plugin>
+
+      <plugin filename="ignition-gazebo-odometry-publisher-system"
+        name="ignition::gazebo::systems::OdometryPublisher">
+        <dimensions>3</dimensions>
+        <odom_frame>iris_quad/odom</odom_frame>
+        <robot_base_frame>iris_quad/base_link</robot_base_frame>
+      </plugin>
+    </include>
+
+    <!-- The UGV - spawns at the green marker's (x, y): room A, aligned with
+         the tunnel's own centerline (y=0) so the straight-line path to the
+         goal genuinely passes through the tunnel, not just near it. MUST
+         match launch/tunnel_demo.launch.py's ugv_odom_static_tf translation
+         exactly - same single-source-of-truth convention room_maze.world
+         and nav_sim.launch.py already use for nav_ugv's spawn pose. -->
+    <include>
+      <name>nav_ugv</name>
+      <uri>model://nav_ugv</uri>
+      <pose>-3.0 0.0 0.0 0 0 0</pose>
+
+      <plugin filename="ignition-gazebo-diff-drive-system"
+        name="gz::sim::systems::DiffDrive">
+        <left_joint>left_wheel_joint</left_joint>
+        <right_joint>right_wheel_joint</right_joint>
+        <wheel_separation>0.4</wheel_separation>
+        <wheel_radius>0.05</wheel_radius>
+        <topic>cmd_vel</topic>
+        <odom_topic>odometry</odom_topic>
+        <!-- REAL BUG FOUND LIVE (GUI-mode run, 2026-09-24): this plugin's
+             OWN odom/TF output (frame_id/child_frame_id below) is DEAD-
+             RECKONED from wheel rotation, not the chassis's true simulated
+             position - see this project's own "wheel odometry lied"
+             retraction in docs/work-docs/nav/step06_hybrid_3d_voxel_
+             navigation.md. Confirmed live: after a chassis-stability event
+             (now separately fixed - see models/nav_ugv/model.sdf's
+             front_caster_wheel), this dead-reckoned odom diverged from
+             Ignition's own physics ground truth (`/world/tunnel_test/
+             dynamic_pose/info`) by SEVERAL METERS while the robot was
+             mid-drive - not a one-time freeze, an ongoing drift under
+             normal turning. Renamed to its own dedicated, UNUSED frame
+             pair so it's obviously not what anything else in this system
+             trusts for localization (kept publishing at all only for
+             manual diagnostic comparison against ground truth, e.g. while
+             debugging exactly this class of bug again in the future) -
+             the REAL nav_ugv/odom -> nav_ugv/base_link TF pair (the one
+             bridge.yaml actually bridges to ROS `/tf`, and everything
+             else - Nav2's costmaps, waypoint_follower's TF lookups,
+             bt_navigator's own position tracking - relies on) now comes
+             from the OdometryPublisher plugin below instead, exactly
+             mirroring iris_quad's own already-correct pattern (see
+             emap/worlds/bump_test.world's own OdometryPublisher block and
+             its bridge.yaml's "/model/iris_quad/pose" comment) - ground
+             truth, not wheel integration. -->
+        <frame_id>nav_ugv/wheel_odom</frame_id>
+        <child_frame_id>nav_ugv/wheel_odom_base</child_frame_id>
+        <odom_publish_frequency>30</odom_publish_frequency>
+      </plugin>
+
+      <!-- Ground-truth odom/TF (see the DiffDrive plugin's own comment
+           above for the full story of why this exists) - same plugin,
+           same 2-parameter shape, same reasoning as iris_quad's own block
+           (emap/worlds/bump_test.world), just <dimensions>2</dimensions>
+           since nav_ugv is a planar ground vehicle, not a 3D flyer. Odom
+           frame naming (nav_ugv/odom) is unchanged from before this fix -
+           the existing ugv_odom_static_tf static transform (iris_quad/odom
+           -> nav_ugv/odom, -3,0,0 - see launch/tunnel_demo.launch.py) still
+           composes correctly on top of it, confirmed live: this plugin
+           resets to (0,0,0) at the model's own spawn pose, exactly like
+           DiffDrive's own odom convention did, so the existing offset's
+           meaning ("distance since spawn" -> "absolute world position")
+           is unchanged - only the SOURCE of that distance is now accurate. -->
+      <plugin filename="ignition-gazebo-odometry-publisher-system"
+        name="gz::sim::systems::OdometryPublisher">
+        <dimensions>2</dimensions>
+        <odom_frame>nav_ugv/odom</odom_frame>
+        <robot_base_frame>nav_ugv/base_link</robot_base_frame>
+        <odom_publish_frequency>30</odom_publish_frequency>
+      </plugin>
+    </include>
+
+    <!-- Static overhead overview camera capturing the complete room (with tunnel).
+         REFRAMED (2026-09-24, user report: "wider view which captures all
+         elements in the room"): the room's own real outer-wall footprint is
+         ~12m x 8m (side walls at x=+/-6, front/back walls at y=+/-4 - see
+         tunnel_room's own wall poses/sizes above). The original z=10.5m
+         gave an 18.5m x 13.9m ground footprint at this hfov - the room only
+         filled about 65% of the frame's width, leaving a large wasted gray
+         margin and making every element (robots, markers, tunnel) smaller
+         and harder to make out than necessary. Lowered to z=7.65m for a
+         ~13.5m x 10.1m footprint - the room now fills almost the entire
+         frame with a small clean margin, same hfov/pitch (still straight
+         down, still the whole room, nothing newly cropped out - the room
+         is only 8m tall at its walls, well inside this footprint).
+         Resolution was briefly doubled to 1280x960 for extra clarity, but
+         that was found live to be the wrong tradeoff: it quadrupled this
+         single camera's render cost and dropped its actual achieved rate
+         from several Hz down to ~0.6Hz (a new frame every ~1.6s) under
+         this sandbox's CPU-bound rendering - choppier, not clearer, in the
+         final video. Reverted to 640x480 (unchanged); the height/FOV
+         reframing above is the real, load-free clarity win. -->
+    <model name="overhead_overview_camera">
+      <static>true</static>
+      <pose>0 0 7.65 0 1.5707963 1.5707963</pose>
+      <link name="link">
+        <sensor name="room_overview_camera" type="camera">
+          <always_on>true</always_on>
+          <update_rate>15</update_rate>
+          <visualize>true</visualize>
+          <topic>/room_overhead/image</topic>
+          <camera>
+            <horizontal_fov>1.45</horizontal_fov>
+            <image>
+              <width>640</width>
+              <height>480</height>
+            </image>
+            <clip>
+              <near>0.1</near>
+              <far>100</far>
+            </clip>
+          </camera>
+        </sensor>
+      </link>
+    </model>
+  </world>
+</sdf>

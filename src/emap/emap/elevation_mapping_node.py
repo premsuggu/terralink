@@ -28,6 +28,28 @@ by the exact same sensor data every callback; neither `ElevationMap`,
 support this - they already work correctly whether or not `move_to` is ever
 called on a given instance.
 
+A later, OFF-BY-DEFAULT addition: an optional SECOND point-cloud subscription
+(`secondary_points_topic`, empty string = disabled). This exists to close a
+real, structural gap - the UAV's camera looks straight down, so anything
+that occludes the ground from directly overhead (a tunnel/culvert's
+interior, an overhang) is `is_valid=False` FOREVER, no matter how long or
+how thoroughly the surrounding area gets scanned (see
+docs/work-docs/nav/step05_frontier_tunnel_navigation.md for the full
+scenario). A ground vehicle approaching that same spot can carry a sensor
+with a genuinely different vantage point and observe exactly what the UAV
+structurally cannot. `fuse_points`'s Bayesian per-cell update (see
+`fusion.py`'s own docstring) already has no notion of "which vehicle did
+this measurement come from" - a cell's belief is updated the same principled
+way regardless of the source, so accepting a second point-cloud stream is a
+genuine EXTENSION (one more subscription calling the exact same fusion
+helper), not a rewrite of anything above it. It only ever feeds the GLOBAL
+map, deliberately never the local rolling one - the local map's whole
+purpose is "re-centered on THE robot right now" (see this docstring's own
+Section above), which becomes ambiguous the moment there's more than one
+robot; the global map has no such per-robot framing problem; it just
+accumulates whatever anyone measured, forever, which is exactly the
+semantics a second sensor needs.
+
 Two more pieces wired in here, both optional and both off-by-default-safe:
   - step 9 (`emap/fusion_gpu.py`): `fuse_points`'s exact algorithm, run on
     the GPU via CuPy. Resolved ONCE at startup (`self._use_gpu_fusion`) from
@@ -109,6 +131,35 @@ class ElevationMappingNode(Node):
         self.declare_parameter("drift_correction_gain", 0.3)
         self.declare_parameter("drift_max_reasonable_residual", 1.0)
         self.declare_parameter("synthetic_drift_z_rate", 0.0)
+        # See this file's module docstring for the full rationale. Empty
+        # string (the default) means "no second sensor" - the subscription
+        # below is simply never created, so a checkout that never sets this
+        # parameter is completely unaffected.
+        self.declare_parameter("secondary_points_topic", "")
+        # OFF by default (1 = every point, no change from before this
+        # parameter existed) - see docs/work-docs/nav/step06_hybrid_3d_voxel_navigation.md's
+        # "GUI-mode resource contention" section for why this exists: this
+        # node's CPU fusion (no GPU/cupy available in this sandbox - see
+        # `use_gpu_fusion`'s own fallback warning below) processes every
+        # point of a 320x240 depth camera at 10Hz, TWICE over when a second
+        # sensor is also feeding it (`secondary_points_topic`) - a real,
+        # measured contributor to CPU contention severe enough that adding
+        # Gazebo's own GUI render client on top of it could stall physics
+        # entirely (confirmed live: `nav`'s tunnel_demo.launch.py, GUI mode,
+        # system load 22+, UGV's true position frozen for 100+ seconds
+        # despite Nav2 actively issuing commands - see
+        # docs/work-docs/nav/step06_hybrid_3d_voxel_navigation.md). A stride
+        # of N keeps only every Nth point of the FLATTENED point array
+        # (applied BEFORE any transform or fusion work, not after) - a
+        # straight 1/N volume reduction, not a per-row/per-column 2D one -
+        # a real accuracy/density tradeoff, but at this project's 0.1m grid
+        # resolution over small (~10m) worlds, 320x240 was always producing
+        # far more points per cell than fusion actually needs. Live-measured
+        # at stride=4 (`nav`'s own launch files' setting): this node's CPU
+        # dropped from ~220% to ~40%, and two full GUI-mode runs afterward
+        # both completed a real tunnel crossing where every prior GUI-mode
+        # attempt at this resolution had stalled.
+        self.declare_parameter("point_cloud_stride", 1)
 
         self._map_frame = self.get_parameter("map_frame").value
         self._base_frame = self.get_parameter("base_frame").value
@@ -120,6 +171,7 @@ class ElevationMappingNode(Node):
         self._max_slope = float(self.get_parameter("max_slope").value)
         self._max_step = float(self.get_parameter("max_step").value)
         self._max_roughness = float(self.get_parameter("max_roughness").value)
+        self._point_cloud_stride = max(1, int(self.get_parameter("point_cloud_stride").value))
 
         # step 9: resolve ONCE at startup (not re-checked every callback)
         # whether the GPU fusion path actually applies - both the parameter
@@ -189,6 +241,26 @@ class ElevationMappingNode(Node):
             PointCloud2, "/camera/points", self._pointcloud_callback, qos_profile_sensor_data
         )
 
+        # Optional second sensor (see module docstring) - e.g. a ground
+        # vehicle's own forward/downward-looking depth camera, investigating
+        # terrain the UAV's overhead view can never resolve. `self._map_frame`
+        # is reused as the fusion target on purpose: BOTH sensors' point
+        # clouds are transformed into that same shared frame before fusion,
+        # exactly like the primary camera above - there is nothing
+        # UAV-specific about `_pointcloud_callback`'s TF-lookup-then-fuse
+        # pattern, so the secondary callback below reuses it directly rather
+        # than re-deriving it.
+        secondary_topic = self.get_parameter("secondary_points_topic").value
+        self._secondary_points_sub = None
+        if secondary_topic:
+            self._secondary_points_sub = self.create_subscription(
+                PointCloud2, secondary_topic, self._secondary_pointcloud_callback, qos_profile_sensor_data
+            )
+            self.get_logger().info(
+                f"elevation_mapping_node: also fusing a second sensor from '{secondary_topic}' "
+                "into the GLOBAL map only (see module docstring for why not the local map)."
+            )
+
         # /elevation_map is the GLOBAL (persistent) map - the one anything
         # downstream (RViz, later a planner) should actually look at.
         # /elevation_map_local is the rolling window, kept available but not
@@ -230,16 +302,60 @@ class ElevationMappingNode(Node):
                 )
                 return None
 
+    def _read_and_transform_cloud(self, msg: PointCloud2, stamp) -> tuple[np.ndarray, np.ndarray] | None:
+        """Shared by both the primary (UAV) and secondary (e.g. UGV) point
+        cloud callbacks: TF lookup for wherever `msg`'s own sensor frame was
+        at `stamp`, read the cloud, defensively drop non-finite points, and
+        transform into `self._map_frame`. Returns `(points_map_frame,
+        sensor_origin)`, or None if TF wasn't available / the cloud had
+        nothing usable - callers just return early on None, same as the
+        original single-sensor version of this code did inline.
+        """
+        sensor_tf = self._lookup_transform(self._map_frame, msg.header.frame_id, stamp)
+        if sensor_tf is None:
+            return None
+
+        points_sensor_frame = point_cloud2.read_points_numpy(
+            msg, field_names=("x", "y", "z"), skip_nans=True
+        )
+        if points_sensor_frame.size == 0:
+            return None
+
+        # See `point_cloud_stride`'s own declare_parameter comment above for
+        # why this exists - applied first, before the finite-check/transform
+        # below, so every downstream step (this callback's own work AND
+        # fuse_points itself) does proportionally less work too, not just
+        # the fusion math. A stride of 1 (the default) is a no-op slice -
+        # byte-for-byte the same points as before this parameter existed.
+        if self._point_cloud_stride > 1:
+            points_sensor_frame = points_sensor_frame[:: self._point_cloud_stride]
+
+        # `skip_nans=True` above only drops NaN - a depth camera reports
+        # +inf (not NaN) for "no return at all" pixels (e.g. nothing within
+        # range, or - as found while testing this node - literally every
+        # pixel when the camera is closer to the ground than its own near
+        # clip plane). An inf point isn't caught by that filter, and
+        # multiplying it through the rotation matrix in transform_points can
+        # produce NaN (0 * inf = NaN for any zero entry in the rotation
+        # matrix, which a fixed downward/angled mount always has) -
+        # so filter both NaN and inf here, defensively, regardless of how
+        # they got introduced upstream.
+        finite = np.all(np.isfinite(points_sensor_frame), axis=1)
+        if not np.any(finite):
+            return None
+        points_sensor_frame = points_sensor_frame[finite]
+
+        points_map_frame = transform_points(points_sensor_frame, sensor_tf)
+        sensor_origin = translation_of(sensor_tf)
+        return points_map_frame, sensor_origin
+
     def _pointcloud_callback(self, msg: PointCloud2) -> None:
         stamp = Time.from_msg(msg.header.stamp)
 
-        # Where the CAMERA was when it took this cloud - needed both to
-        # transform the points themselves (step 2) and, separately, as the
-        # sensor's own position for fuse_points' distance-based noise model
-        # (step 4) - the same lookup answers both, no extra work needed.
-        camera_tf = self._lookup_transform(self._map_frame, msg.header.frame_id, stamp)
-        if camera_tf is None:
+        result = self._read_and_transform_cloud(msg, stamp)
+        if result is None:
             return
+        points_map_frame, sensor_origin = result
 
         # Where the DRONE ITSELF was - used only to re-center the map
         # (step 5). Deliberately a separate lookup from the camera's own
@@ -249,31 +365,7 @@ class ElevationMappingNode(Node):
         base_tf = self._lookup_transform(self._map_frame, self._base_frame, stamp)
         if base_tf is None:
             return
-
-        points_sensor_frame = point_cloud2.read_points_numpy(
-            msg, field_names=("x", "y", "z"), skip_nans=True
-        )
-        if points_sensor_frame.size == 0:
-            return
-
-        # `skip_nans=True` above only drops NaN - a depth camera reports
-        # +inf (not NaN) for "no return at all" pixels (e.g. nothing within
-        # range, or - as found while testing this node - literally every
-        # pixel when the camera is closer to the ground than its own near
-        # clip plane). An inf point isn't caught by that filter, and
-        # multiplying it through the rotation matrix in transform_points can
-        # produce NaN (0 * inf = NaN for any zero entry in the rotation
-        # matrix, which this camera's fixed downward mount always has) -
-        # so filter both NaN and inf here, defensively, regardless of how
-        # they got introduced upstream.
-        finite = np.all(np.isfinite(points_sensor_frame), axis=1)
-        if not np.any(finite):
-            return
-        points_sensor_frame = points_sensor_frame[finite]
-
-        points_map_frame = transform_points(points_sensor_frame, camera_tf)
         base_position = translation_of(base_tf)
-        sensor_origin = translation_of(camera_tf)
 
         # step 10 (FAKE, for visibility only): Gazebo's TF is ground truth
         # and never drifts on its own, so with synthetic_drift_z_rate > 0 we
@@ -331,6 +423,26 @@ class ElevationMappingNode(Node):
         # fuse_points' existing in_bounds check (step 4) - nothing new to
         # handle, it already behaves correctly for a map that doesn't follow
         # the sensor.
+        self._fuse_and_update_traversability(self._global_map, points_map_frame, sensor_origin)
+
+    def _secondary_pointcloud_callback(self, msg: PointCloud2) -> None:
+        """A second sensor's point cloud (see this file's module docstring
+        and `secondary_points_topic`'s declare_parameter comment) - same TF
+        lookup + read + transform as the primary UAV camera, via the shared
+        `_read_and_transform_cloud` helper, but fused into the GLOBAL map
+        ONLY. No drift-compensation bookkeeping here on purpose: that
+        estimate (`self._z_bias_estimate`) exists to correct ONE sensor's
+        accumulating bias against the global map; folding a second,
+        physically different sensor's residual into the same running
+        estimate would conflate two unrelated error sources into one number
+        that no longer means anything - out of scope for what this addition
+        is actually solving (see step05's doc for the honest scope note).
+        """
+        stamp = Time.from_msg(msg.header.stamp)
+        result = self._read_and_transform_cloud(msg, stamp)
+        if result is None:
+            return
+        points_map_frame, sensor_origin = result
         self._fuse_and_update_traversability(self._global_map, points_map_frame, sensor_origin)
 
     def _fuse_and_update_traversability(self, emap: ElevationMap, points_map_frame, sensor_origin) -> None:

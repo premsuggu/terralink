@@ -31,21 +31,99 @@
   gz_type_name: "ignition.msgs.Odometry"
   direction: GZ_TO_ROS
 
+# Real ground truth (2026-09-24, added after a real debugging cost): the
+# entry above (/ugv/odom) is DiffDrive-plugin odometry per this file's own
+# top-of-file comment - wheel-integrated dead reckoning for
+# worlds/room_maze.world, and it turns out worlds/tunnel_test.world ALSO
+# still has that same DiffDrive plugin active alongside the newer
+# OdometryPublisher one, so this literal "/odometry" gz topic is still
+# DiffDrive-sourced there too. It can silently freeze/diverge from the
+# real chassis position under load - this cost a full, otherwise-avoidable
+# debugging pass live (see step06_hybrid_3d_voxel_navigation.md's "Second
+# pass on the recordings" section) before being caught. This entry exposes
+# Ignition's own physics-ground-truth odometry (same OdometryPublisher
+# plugin instance /tf already correctly uses - see that entry's own
+# comment) as a SEPARATE, always-correct ROS topic, so any future
+# verification/monitoring script has a genuinely reliable source to read
+# instead of re-deriving this the hard way again.
+- ros_topic_name: "/ugv/odom_ground_truth"
+  gz_topic_name: "/model/nav_ugv/odometry"
+  ros_type_name: "nav_msgs/msg/Odometry"
+  gz_type_name: "ignition.msgs.Odometry"
+  direction: GZ_TO_ROS
+
 - ros_topic_name: "/scan"
   gz_topic_name: "/nav_ugv/scan"
   ros_type_name: "sensor_msgs/msg/LaserScan"
   gz_type_name: "ignition.msgs.LaserScan"
   direction: GZ_TO_ROS
 
-# Ground-truth nav_ugv/odom -> nav_ugv/base_link, published directly by the
-# DiffDrive plugin (its own dedicated /model/nav_ugv/tf topic - confirmed
-# live, distinct from iris_quad's pattern of contributing to a generic
-# /model/<name>/pose topic). This is DEAD-RECKONING odom (integrated from
-# zero at spawn), NOT world-absolute like iris_quad's - see
-# launch/nav_sim.launch.py's static_transform_publisher for the fixed
-# offset that ties this into the same frame emap's map already uses.
+# nav_ugv/odom -> nav_ugv/base_link, now from the OdometryPublisher plugin
+# (worlds/tunnel_test.world) instead of DiffDrive's own dead-reckoned
+# /model/nav_ugv/tf. REAL BUG FOUND LIVE (GUI-mode run, 2026-09-24): the
+# DiffDrive-sourced version of this bridge entry was wheel odometry, not
+# the chassis's true position - it diverged from Ignition's own physics
+# ground truth by several meters during normal driving, causing Nav2's
+# entire navigation stack (which has no other localization source) to act
+# on a false belief of where the robot was. /model/nav_ugv/pose is
+# OdometryPublisher's own broadcast, sourced from real simulated pose -
+# exactly the same mechanism iris_quad's own bridge.yaml already uses for
+# its "/model/iris_quad/pose" entry (ground-truth link poses from physics,
+# see that file's own comment). This is still DEAD-RECKONING-shaped odom
+# (resets to zero at spawn, not world-absolute) - see
+# launch/tunnel_demo.launch.py's static_transform_publisher for the fixed
+# offset that ties this into the same frame emap's map already uses -
+# only the SOURCE of the "distance since spawn" changed, not the
+# convention.
 - ros_topic_name: "/tf"
-  gz_topic_name: "/model/nav_ugv/tf"
+  gz_topic_name: "/model/nav_ugv/pose"
   ros_type_name: "tf2_msgs/msg/TFMessage"
   gz_type_name: "ignition.msgs.Pose_V"
   direction: GZ_TO_ROS
+
+# step05: nav_ugv's own front-facing depth camera (see
+# models/nav_ugv/model.sdf's front_camera_link) - only used by
+# tunnel_demo.launch.py (see docs/work-docs/nav/step05_frontier_tunnel_navigation.md),
+# harmless to leave bridged unconditionally here since nothing subscribes to
+# it unless emap's secondary_points_topic parameter is actually set to this
+# topic. Topic name pattern (<sensor <topic> value>/points) confirmed live
+# to match the SAME convention iris_quad's rgbd_camera already uses in
+# emap/config/bridge.yaml (Ignition's rgbd_camera sensor plugin always
+# appends "/points" to whatever <topic> the sensor itself declares).
+- ros_topic_name: "/ugv/camera/points"
+  gz_topic_name: "/nav_ugv/front_camera/points"
+  ros_type_name: "sensor_msgs/msg/PointCloud2"
+  gz_type_name: "ignition.msgs.PointCloudPacked"
+  direction: GZ_TO_ROS
+
+# User-requested capability (2026-09-24): "an mp4 recording... it can be
+# from UGV's POV in the room as well" - scripts/record_run.py subscribes to
+# this. CORRECTED (2026-09-24, second pass): this originally pointed at
+# front_camera/image - that sensor's 0.6 rad downward tilt at 0.05m height
+# is deliberately close-range/floor-facing for real elevation-map sensing
+# (see models/nav_ugv/model.sdf's front_camera_link comment), so a
+# recording from it showed nothing recognizable, just flat floor-color
+# bands - confirmed live by extracting and viewing actual frames, not
+# assumed. video_camera_link is a SEPARATE sensor added purely for this,
+# mounted higher with a much gentler tilt so it actually shows the room.
+# REAL BUG FOUND LIVE (2026-09-24, second pass): this originally pointed at
+# ".../video_camera/image" by analogy with front_camera's rgbd_camera - but
+# confirmed live via `ign topic -l` that a plain `type="camera"` sensor does
+# NOT get an "/image" suffix appended the way `rgbd_camera` does; it
+# publishes directly on the exact <topic> value from the SDF. The bridge
+# was silently connecting to a topic that never existed (0 frames written
+# by record_run.py, caught by actually checking the output file's frame
+# count, not assumed from "it didn't error").
+- ros_topic_name: "/ugv/camera/image_raw"
+  gz_topic_name: "/nav_ugv/video_camera"
+  ros_type_name: "sensor_msgs/msg/Image"
+  gz_type_name: "ignition.msgs.Image"
+  direction: GZ_TO_ROS
+
+# Top-down static overview camera capturing the complete room (with tunnel)
+- ros_topic_name: "/room_overhead/image_raw"
+  gz_topic_name: "/room_overhead/image"
+  ros_type_name: "sensor_msgs/msg/Image"
+  gz_type_name: "ignition.msgs.Image"
+  direction: GZ_TO_ROS
+

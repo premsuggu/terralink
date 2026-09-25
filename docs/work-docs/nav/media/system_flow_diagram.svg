@@ -1,0 +1,337 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1580 860" width="100%" height="100%">
+  <defs>
+    <!-- Arrow markers -->
+    <marker id="arr-gray" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 1 2 L 7 5 L 1 8 z" fill="#475569" />
+    </marker>
+    <marker id="arr-blue" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 1 2 L 7 5 L 1 8 z" fill="#2563eb" />
+    </marker>
+    <marker id="arr-green" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 1 2 L 7 5 L 1 8 z" fill="#059669" />
+    </marker>
+    <marker id="arr-amber" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 1 2 L 7 5 L 1 8 z" fill="#d97706" />
+    </marker>
+    <marker id="arr-purple" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 1 2 L 7 5 L 1 8 z" fill="#7c3aed" />
+    </marker>
+    <marker id="arr-red" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 1 2 L 7 5 L 1 8 z" fill="#dc2626" />
+    </marker>
+  </defs>
+
+  <style>
+    .paper-title { font-family: "Times New Roman", Times, Georgia, serif; font-size: 19px; font-weight: bold; fill: #0f172a; text-anchor: middle; }
+    .paper-subtitle { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 11.5px; fill: #475569; text-anchor: middle; }
+    .col-title { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 11px; font-weight: 700; fill: #1e293b; letter-spacing: 0.5px; }
+    .node-title { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 11px; font-weight: 600; fill: #0f172a; }
+    .node-sub { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 9.5px; fill: #475569; }
+    .edge-label { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 9px; font-weight: 600; fill: #334155; }
+  </style>
+
+  <!-- Clean Background -->
+  <rect width="100%" height="100%" fill="#ffffff" />
+
+  <!-- Outer Border -->
+  <rect x="15" y="15" width="1550" height="830" rx="4" fill="none" stroke="#cbd5e1" stroke-width="1.2" />
+
+  <!-- Header Section (Dedicated Y: 22..65, zero line intersections) -->
+  <text class="paper-title" x="790" y="42">Collaborative UAV–UGV Autonomous Navigation Architecture</text>
+  <text class="paper-subtitle" x="790" y="60">End-to-End System Pipeline: Aerial 2.5D Mapping, Anomaly-Aware PRM Planning, and 3D Voxel Headroom Resolution</text>
+
+  <!-- ========================================================================= -->
+  <!-- DEDICATED TOP FEEDBACK BUS (Y = 74, Completely clear horizontal highway)  -->
+  <!-- ========================================================================= -->
+  <!-- 3D Clearance Feedback: Passable (x=1220) -> Sr Database (x=395) -->
+  <path d="M 1220 170 L 1220 74 L 395 74 L 395 396 L 405 396" fill="none" stroke="#0284c7" stroke-width="1.3" stroke-dasharray="3,3" marker-end="url(#arr-blue)" />
+  <rect x="680" y="66" width="220" height="16" fill="#ffffff" stroke="#cbd5e1" stroke-width="0.8" rx="2" />
+  <text class="edge-label" x="790" y="78" fill="#0369a1" text-anchor="middle">Record Verified 3D Clearance to Sr Database</text>
+
+  <!-- ========================================================================= -->
+  <!-- COLUMN 1: PERCEPTION & 2.5D ELEVATION MAPPING (X: 35..335)                 -->
+  <!-- ========================================================================= -->
+  <rect x="35" y="86" width="300" height="660" rx="3" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1" />
+  <rect x="35" y="86" width="300" height="26" rx="3" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1" />
+  <text class="col-title" x="48" y="103">1. PERCEPTION &amp; 2.5D ELEVATION MAPPING</text>
+
+  <!-- Node 1.1: UAV Camera -->
+  <rect x="55" y="122" width="260" height="44" rx="3" fill="#ffffff" stroke="#94a3b8" stroke-width="1.2" />
+  <text class="node-title" x="65" y="140">Aerial Depth Camera (UAV)</text>
+  <text class="node-sub" x="65" y="154">Downward RGB-D (10 Hz PointCloud2)</text>
+
+  <!-- Node 1.2: Range Filter -->
+  <rect x="55" y="186" width="260" height="44" rx="3" fill="#ffffff" stroke="#94a3b8" stroke-width="1.2" />
+  <text class="node-title" x="65" y="204">Range &amp; TF Preprocessing</text>
+  <text class="node-sub" x="65" y="218">World TF projection; d ∈ [0.3, 19.5m]</text>
+
+  <!-- Node 1.3: Bayesian Fusion -->
+  <rect x="55" y="250" width="260" height="48" rx="3" fill="#ffffff" stroke="#2563eb" stroke-width="1.4" />
+  <text class="node-title" x="65" y="268" fill="#1d4ed8">Recursive Bayesian Fusion</text>
+  <text class="node-sub" x="65" y="282">Height μ &amp; variance σ²; Mahalanobis test</text>
+
+  <!-- Node 1.4: Persistent Global Map -->
+  <rect x="55" y="318" width="260" height="46" rx="3" fill="#ffffff" stroke="#2563eb" stroke-width="1.4" />
+  <text class="node-title" x="65" y="336" fill="#1d4ed8">Persistent Global GridMap (emap)</text>
+  <text class="node-sub" x="65" y="350">Layers: elevation, variance, is_valid</text>
+
+  <!-- Node 1.5: Analytical Traversability Filter -->
+  <rect x="55" y="384" width="260" height="54" rx="3" fill="#ffffff" stroke="#2563eb" stroke-width="1.4" />
+  <text class="node-title" x="65" y="402" fill="#1d4ed8">Analytical Traversability Filter</text>
+  <text class="node-sub" x="65" y="416">Slope: ||∇h||; Step: local 3×3 max - min</text>
+  <text class="node-sub" x="65" y="428">Classes: SAFE (1.0), DIFFICULT (0.3), LETHAL (0.0)</text>
+
+  <!-- Node 1.6: UGV Depth Camera -->
+  <rect x="55" y="464" width="260" height="44" rx="3" fill="#ffffff" stroke="#94a3b8" stroke-width="1.2" />
+  <text class="node-title" x="65" y="482">Ground Depth Camera (UGV)</text>
+  <text class="node-sub" x="65" y="496">Forward RGB-D (Secondary local stream)</text>
+
+  <!-- Node 1.7: UAV Autopilot Patrol -->
+  <rect x="55" y="556" width="260" height="48" rx="3" fill="#ffffff" stroke="#0284c7" stroke-width="1.2" />
+  <text class="node-title" x="65" y="574" fill="#0369a1">UAV Exploration Autopilot</text>
+  <text class="node-sub" x="65" y="588">Patrol pattern to expand map coverage</text>
+
+  <!-- Column 1 Internal Arrows (Straight, perfectly centered at x=185) -->
+  <line x1="185" y1="166" x2="185" y2="186" stroke="#475569" stroke-width="1.2" marker-end="url(#arr-gray)" />
+  <line x1="185" y1="230" x2="185" y2="250" stroke="#475569" stroke-width="1.2" marker-end="url(#arr-gray)" />
+  <line x1="185" y1="298" x2="185" y2="318" stroke="#2563eb" stroke-width="1.2" marker-end="url(#arr-blue)" />
+  <line x1="185" y1="364" x2="185" y2="384" stroke="#2563eb" stroke-width="1.2" marker-end="url(#arr-blue)" />
+
+  <!-- Node 1.6 to Node 1.3: Cleanly routed along left margin (x=45) without touching Node 1.5 -->
+  <path d="M 55 486 L 45 486 L 45 274 L 55 274" fill="none" stroke="#64748b" stroke-width="1.1" stroke-dasharray="3,3" marker-end="url(#arr-gray)" />
+
+  <!-- Node 1.7 to Node 1.1: Autopilot flies drone to expand perception -->
+  <path d="M 185 556 L 185 530 L 45 530 L 45 144 L 55 144" fill="none" stroke="#0284c7" stroke-width="1.1" stroke-dasharray="3,3" marker-end="url(#arr-blue)" />
+
+  <!-- ========================================================================= -->
+  <!-- GAP 1-2 TRUNK: Traversability -> Spatial Classification Masks             -->
+  <!-- ========================================================================= -->
+  <!-- Exit Node 1.5 at (315, 411), to x=360, up to y=146, y=226, y=310 -->
+  <line x1="315" y1="411" x2="360" y2="411" stroke="#2563eb" stroke-width="1.3" />
+  <line x1="360" y1="146" x2="360" y2="411" stroke="#2563eb" stroke-width="1.3" />
+  <line x1="360" y1="146" x2="405" y2="146" stroke="#059669" stroke-width="1.3" marker-end="url(#arr-green)" />
+  <line x1="360" y1="226" x2="405" y2="226" stroke="#d97706" stroke-width="1.3" marker-end="url(#arr-amber)" />
+  <line x1="360" y1="310" x2="405" y2="310" stroke="#7c3aed" stroke-width="1.3" marker-end="url(#arr-purple)" />
+
+  <!-- ========================================================================= -->
+  <!-- COLUMN 2: SPATIAL CLASSIFICATION & ANOMALY TOPOLOGY (X: 385..685)         -->
+  <!-- ========================================================================= -->
+  <rect x="385" y="86" width="300" height="660" rx="3" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1" />
+  <rect x="385" y="86" width="300" height="26" rx="3" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1" />
+  <text class="col-title" x="398" y="103">2. SPATIAL CLASSIFICATION (nav)</text>
+
+  <!-- Node 2.1: Walkable Mask -->
+  <rect x="405" y="122" width="260" height="48" rx="3" fill="#ffffff" stroke="#059669" stroke-width="1.4" />
+  <text class="node-title" x="415" y="141" fill="#047857">Walkable Space Mask (Mw)</text>
+  <text class="node-sub" x="415" y="157">is_valid == True ∧ traversability ≠ LETHAL</text>
+
+  <!-- Node 2.2: Frontier Mask -->
+  <rect x="405" y="202" width="260" height="48" rx="3" fill="#ffffff" stroke="#d97706" stroke-width="1.4" />
+  <text class="node-title" x="415" y="221" fill="#b45309">Frontier Mask (Mf)</text>
+  <text class="node-sub" x="415" y="237">is_valid == False ∧ 4-connected to Mw</text>
+
+  <!-- Node 2.3: Occlusion Anomaly Mask -->
+  <rect x="405" y="282" width="260" height="56" rx="3" fill="#ffffff" stroke="#7c3aed" stroke-width="1.4" />
+  <text class="node-title" x="415" y="301" fill="#6d28d9">Occlusion Anomaly Detector (Ma, v3)</text>
+  <text class="node-sub" x="415" y="316">Connected-component island topology</text>
+  <text class="node-sub" x="415" y="328">Flags false-lethal tunnel roof plateau</text>
+
+  <!-- Node 2.4: Resolved Region Store -->
+  <rect x="405" y="370" width="260" height="52" rx="3" fill="#ffffff" stroke="#0284c7" stroke-width="1.4" />
+  <text class="node-title" x="415" y="389" fill="#0369a1">Resolved Region Store (Sr)</text>
+  <text class="node-sub" x="415" y="403">Persistent database of verified 3D clearance</text>
+  <text class="node-sub" x="415" y="415">Overrides Ma → Mw once verified</text>
+
+  <!-- Sr Overrides Ma and Mw: routed in dedicated right margin (x=675) with zero overlap -->
+  <path d="M 665 385 L 675 385 L 675 310 L 665 310" fill="none" stroke="#0284c7" stroke-width="1.1" stroke-dasharray="3,3" marker-end="url(#arr-blue)" />
+  <path d="M 675 310 L 675 146 L 665 146" fill="none" stroke="#0284c7" stroke-width="1.1" stroke-dasharray="3,3" marker-end="url(#arr-blue)" />
+
+  <!-- ========================================================================= -->
+  <!-- GAP 2-3 CONNECTORS: Spatial Masks -> PRM Planner Inputs                   -->
+  <!-- ========================================================================= -->
+  <!-- Mw -> Node 3.1 & Node 3.2 -->
+  <line x1="665" y1="140" x2="755" y2="140" stroke="#059669" stroke-width="1.3" marker-end="url(#arr-green)" />
+  <!-- Mf -> Node 3.2 -->
+  <path d="M 665 226 L 710 226 L 710 208 L 755 208" fill="none" stroke="#d97706" stroke-width="1.3" marker-end="url(#arr-amber)" />
+  <!-- Ma -> Node 3.4 Dijkstra -->
+  <path d="M 665 310 L 715 310 L 715 342 L 755 342" fill="none" stroke="#7c3aed" stroke-width="1.3" marker-end="url(#arr-purple)" />
+
+  <!-- ========================================================================= -->
+  <!-- COLUMN 3: PROBABILISTIC ROADMAP (PRM) PLANNER (X: 735..1075)              -->
+  <!-- ========================================================================= -->
+  <rect x="735" y="86" width="340" height="660" rx="3" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1" />
+  <rect x="735" y="86" width="340" height="26" rx="3" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1" />
+  <text class="col-title" x="748" y="103">3. PROBABILISTIC ROADMAP (PRM) PLANNER</text>
+
+  <!-- Node 3.1: Start Footprint Clearing -->
+  <rect x="755" y="122" width="300" height="44" rx="3" fill="#ffffff" stroke="#94a3b8" stroke-width="1.2" />
+  <text class="node-title" x="765" y="140">Start / Goal Input &amp; Footprint</text>
+  <text class="node-sub" x="765" y="154">Clears radius r=0.3m around UGV current pose</text>
+
+  <!-- Node 3.2: Roadmap Sampling -->
+  <rect x="755" y="186" width="300" height="44" rx="3" fill="#ffffff" stroke="#94a3b8" stroke-width="1.2" />
+  <text class="node-title" x="765" y="204">Free-Space Roadmap Sampling</text>
+  <text class="node-sub" x="765" y="218">V = {s, g} ∪ UniformRandom(Mw ∪ Mf ∪ Ma, N=400)</text>
+
+  <!-- Node 3.3: Line-of-Sight Check -->
+  <rect x="755" y="250" width="300" height="44" rx="3" fill="#ffffff" stroke="#94a3b8" stroke-width="1.2" />
+  <text class="node-title" x="765" y="268">Line-of-Sight Graph Construction</text>
+  <text class="node-sub" x="765" y="282">Bresenham raycast; connect radius r=3.0m</text>
+
+  <!-- Node 3.4: Cost-Weighted Dijkstra -->
+  <rect x="755" y="314" width="300" height="56" rx="3" fill="#ffffff" stroke="#2563eb" stroke-width="1.4" />
+  <text class="node-title" x="765" y="333" fill="#1d4ed8">Cost-Weighted Dijkstra Search</text>
+  <text class="node-sub" x="765" y="348">Walkable/Frontier edge: w = ||pi - pj||</text>
+  <text class="node-sub" x="765" y="360">Anomaly edge: w = 20 × ||pi - pj|| (Penalty)</text>
+
+  <!-- Sub-Panel: Routing Outputs -->
+  <rect x="755" y="392" width="300" height="236" rx="3" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1" />
+  <text class="node-title" x="765" y="411">Route Feasibility Classification</text>
+
+  <rect x="770" y="422" width="270" height="42" rx="2" fill="#ffffff" stroke="#059669" stroke-width="1.2" />
+  <text class="node-title" x="780" y="438" fill="#047857">Route A: Confirmed Path</text>
+  <text class="node-sub" x="780" y="452">Pure walkable terrain; has_frontier=F, has_anomaly=F</text>
+
+  <rect x="770" y="474" width="270" height="42" rx="2" fill="#ffffff" stroke="#d97706" stroke-width="1.2" />
+  <text class="node-title" x="780" y="490" fill="#b45309">Route B: Tentative Frontier</text>
+  <text class="node-sub" x="780" y="504">Traverses unobserved space (has_frontier=T)</text>
+
+  <rect x="770" y="526" width="270" height="42" rx="2" fill="#ffffff" stroke="#7c3aed" stroke-width="1.2" />
+  <text class="node-title" x="780" y="542" fill="#6d28d9">Route C: Tentative Anomaly</text>
+  <text class="node-sub" x="780" y="556">Traverses suspected tunnel (has_anomaly=T)</text>
+
+  <rect x="770" y="578" width="270" height="42" rx="2" fill="#ffffff" stroke="#dc2626" stroke-width="1.2" />
+  <text class="node-title" x="780" y="594" fill="#b91c1c">Route D: Infeasible (No Path)</text>
+  <text class="node-sub" x="780" y="608">No graph connection; wait for map expansion</text>
+
+  <!-- Column 3 Internal Arrows -->
+  <line x1="905" y1="166" x2="905" y2="186" stroke="#475569" stroke-width="1.2" marker-end="url(#arr-gray)" />
+  <line x1="905" y1="230" x2="905" y2="250" stroke="#475569" stroke-width="1.2" marker-end="url(#arr-gray)" />
+  <line x1="905" y1="294" x2="905" y2="314" stroke="#475569" stroke-width="1.2" marker-end="url(#arr-gray)" />
+  <line x1="905" y1="370" x2="905" y2="392" stroke="#2563eb" stroke-width="1.2" marker-end="url(#arr-blue)" />
+
+  <!-- ========================================================================= -->
+  <!-- GAP 3-4 DEDICATED LANES: Non-colliding parallel channels (X: 1075..1135)   -->
+  <!-- ========================================================================= -->
+  <!-- Lane 5 (x=1120): Route C -> 3D Voxel Verification -->
+  <path d="M 1040 547 L 1120 547 L 1120 197 L 1155 197" fill="none" stroke="#7c3aed" stroke-width="1.3" marker-end="url(#arr-purple)" />
+
+  <!-- Lane 4 (x=1110): Route B -> Waypoint Pruning -->
+  <path d="M 1040 495 L 1110 495 L 1110 334 L 1155 334" fill="none" stroke="#d97706" stroke-width="1.3" marker-end="url(#arr-amber)" />
+
+  <!-- Lane 3 (x=1100): Route A -> Waypoint Pruning -->
+  <path d="M 1040 443 L 1100 443 L 1100 318 L 1155 318" fill="none" stroke="#059669" stroke-width="1.3" marker-end="url(#arr-green)" />
+
+  <!-- Lane 2 (x=1090): Stuck Recovery Watchdog Replan Loop -->
+  <path d="M 1155 464 L 1090 464 L 1090 154 L 1055 154" fill="none" stroke="#dc2626" stroke-width="1.2" stroke-dasharray="3,3" marker-end="url(#arr-red)" />
+
+  <!-- Lane 1 (x=1080): 3D Blocked Replan Loop (Routes out of BLOCKED top, zero collision with PASSABLE) -->
+  <path d="M 1340 170 L 1340 114 L 1080 114 L 1080 138 L 1055 138" fill="none" stroke="#dc2626" stroke-width="1.2" stroke-dasharray="3,3" marker-end="url(#arr-red)" />
+  <rect x="1195" y="106" width="46" height="15" fill="#ffffff" stroke="#cbd5e1" stroke-width="0.8" rx="2" />
+  <text class="edge-label" x="1218" y="117" fill="#b91c1c" text-anchor="middle">Replan</text>
+
+  <!-- ========================================================================= -->
+  <!-- COLUMN 4: 3D HEADROOM VERIFICATION & EXECUTION (X: 1135..1545)            -->
+  <!-- ========================================================================= -->
+  <rect x="1135" y="86" width="410" height="660" rx="3" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1" />
+  <rect x="1135" y="86" width="410" height="26" rx="3" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1" />
+  <text class="col-title" x="1148" y="103">4. 3D VERIFICATION &amp; UGV EXECUTION</text>
+
+  <!-- 3D Voxel Verification Sub-Block -->
+  <rect x="1155" y="122" width="370" height="154" rx="3" fill="#ffffff" stroke="#7c3aed" stroke-width="1.4" />
+  <text class="node-title" x="1168" y="142" fill="#6d28d9">Bounded 3D Voxel Verification (OctoMap)</text>
+  <text class="node-sub" x="1168" y="157">Evaluates vertical clearance: z_floor ≈ 0.0m to z_roof ≈ 0.7m</text>
+
+  <!-- 3 Verdict Outlets -->
+  <rect x="1168" y="170" width="105" height="54" rx="2" fill="#f0fdf4" stroke="#059669" stroke-width="1.2" />
+  <text class="node-title" x="1178" y="188" fill="#047857">PASSABLE</text>
+  <text class="node-sub" x="1178" y="202">Headroom clear</text>
+  <text class="node-sub" x="1178" y="214">→ Drive through</text>
+
+  <rect x="1288" y="170" width="105" height="54" rx="2" fill="#fef2f2" stroke="#dc2626" stroke-width="1.2" />
+  <text class="node-title" x="1298" y="188" fill="#b91c1c">BLOCKED</text>
+  <text class="node-sub" x="1298" y="202">Solid obstacle</text>
+  <text class="node-sub" x="1298" y="214">→ Replan</text>
+
+  <rect x="1408" y="170" width="105" height="54" rx="2" fill="#fffbeb" stroke="#d97706" stroke-width="1.2" />
+  <text class="node-title" x="1418" y="188" fill="#b45309">UNKNOWN</text>
+  <text class="node-sub" x="1418" y="202">Sparse return</text>
+  <text class="node-sub" x="1418" y="214">→ Creep forward</text>
+
+  <text class="node-sub" x="1168" y="255" font-style="italic">*Triggered only before entering suspected anomaly segment</text>
+
+  <!-- Node 4.2: Waypoint Follower Preprocessing -->
+  <rect x="1155" y="300" width="370" height="48" rx="3" fill="#ffffff" stroke="#94a3b8" stroke-width="1.2" />
+  <text class="node-title" x="1168" y="320">Waypoint Pruning (_skip_reached_leading_waypoints)</text>
+  <text class="node-sub" x="1168" y="335">Skips waypoints robot is already on; eliminates Nav2 goal-race</text>
+
+  <!-- Node 4.3: Nav2 Controller -->
+  <rect x="1155" y="368" width="370" height="56" rx="3" fill="#ffffff" stroke="#2563eb" stroke-width="1.4" />
+  <text class="node-title" x="1168" y="388" fill="#1d4ed8">Nav2 Local Tracking (DWB Controller)</text>
+  <text class="node-sub" x="1168" y="403">Subscribes /goal_pose; trajectory rollouts via /cmd_vel</text>
+  <text class="node-sub" x="1168" y="415">Closed-loop ground-truth odometry feedback</text>
+
+  <!-- Node 4.4: Supervisory Watchdogs -->
+  <rect x="1155" y="444" width="370" height="96" rx="3" fill="#ffffff" stroke="#94a3b8" stroke-width="1.2" />
+  <text class="node-title" x="1168" y="464">Runtime Supervisory Watchdogs</text>
+  <text class="node-sub" x="1168" y="483">• Stuck Recovery Watchdog: Δd &lt; 0.15m in 20.0s → Triggers Fresh Replan</text>
+  <text class="node-sub" x="1168" y="502">• Progress-Gated Replan: Re-evaluates only if Δd &lt; 0.3m per 5.0s window</text>
+  <text class="node-sub" x="1168" y="521">• Chassis Pitch Stability: Dual-caster support prevents dynamic tip</text>
+
+  <!-- Node 4.5: Goal Convergence -->
+  <rect x="1155" y="560" width="370" height="48" rx="3" fill="#f0fdf4" stroke="#059669" stroke-width="1.5" />
+  <text class="node-title" x="1168" y="580" fill="#047857">Goal Convergence (Mission Complete)</text>
+  <text class="node-sub" x="1168" y="595">Settles at target within xy_goal_tolerance (≤ 0.25m)</text>
+
+  <!-- Column 4 Internal Connections -->
+  <!-- Passable -> Waypoint Pruning -->
+  <line x1="1220" y1="224" x2="1220" y2="300" stroke="#059669" stroke-width="1.2" marker-end="url(#arr-green)" />
+  <!-- Unknown -> Creep forward into Waypoint Pruning -->
+  <path d="M 1460 224 L 1460 286 L 1420 286 L 1420 300" fill="none" stroke="#d97706" stroke-width="1.2" marker-end="url(#arr-amber)" />
+
+  <!-- Node 4.2 -> 4.3 -> 4.4 -> 4.5 -->
+  <line x1="1340" y1="348" x2="1340" y2="368" stroke="#475569" stroke-width="1.2" marker-end="url(#arr-gray)" />
+  <line x1="1340" y1="424" x2="1340" y2="444" stroke="#475569" stroke-width="1.2" marker-end="url(#arr-gray)" />
+  <line x1="1340" y1="540" x2="1340" y2="560" stroke="#059669" stroke-width="1.3" marker-end="url(#arr-green)" />
+
+  <!-- ========================================================================= -->
+  <!-- ROUTE D INFEASIBLE HIGHWAY: Bottom Gutter (Y = 675)                       -->
+  <!-- Routes completely clear under Column 3 and Column 2 to Node 1.7 in Col 1   -->
+  <!-- ========================================================================= -->
+  <path d="M 1040 599 L 1065 599 L 1065 675 L 185 675 L 185 604" fill="none" stroke="#dc2626" stroke-width="1.3" stroke-dasharray="3,3" marker-end="url(#arr-red)" />
+  <rect x="520" y="667" width="280" height="16" fill="#ffffff" stroke="#cbd5e1" stroke-width="0.8" rx="2" />
+  <text class="edge-label" x="660" y="679" fill="#b91c1c" text-anchor="middle">Route D (Infeasible): Triggers UAV Patrol to Expand Map</text>
+
+  <!-- ========================================================================= -->
+  <!-- LEGEND (Dedicated Y: 760..830, Clean Academic Palette)                    -->
+  <!-- ========================================================================= -->
+  <rect x="35" y="760" width="1510" height="66" rx="3" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1" />
+  <g transform="translate(50, 776)">
+    <text class="node-title" x="0" y="16" font-size="11px">LEGEND:</text>
+
+    <!-- Legend 1: Confirmed Safe Route -->
+    <line x1="70" y1="12" x2="105" y2="12" stroke="#059669" stroke-width="2.2" />
+    <text class="node-sub" x="113" y="15" font-weight="600">Confirmed Safe Route</text>
+    <text class="node-sub" x="113" y="27">(Cost w = ||Δp||, direct execution)</text>
+
+    <!-- Legend 2: Tentative Frontier -->
+    <line x1="330" y1="12" x2="365" y2="12" stroke="#d97706" stroke-width="2.2" />
+    <text class="node-sub" x="373" y="15" font-weight="600">Tentative Frontier Route</text>
+    <text class="node-sub" x="373" y="27">(Explores unobserved space)</text>
+
+    <!-- Legend 3: Tentative Anomaly -->
+    <line x1="580" y1="12" x2="615" y2="12" stroke="#7c3aed" stroke-width="2.2" />
+    <text class="node-sub" x="623" y="15" font-weight="600">Tentative Anomaly Route</text>
+    <text class="node-sub" x="623" y="27">(Penalty w = 20·||Δp||, 3D check)</text>
+
+    <!-- Legend 4: Replan / Recovery Loops -->
+    <line x1="860" y1="12" x2="895" y2="12" stroke="#dc2626" stroke-width="1.8" stroke-dasharray="3,3" />
+    <text class="node-sub" x="903" y="15" font-weight="600">Infeasible / Recovery Replan</text>
+    <text class="node-sub" x="903" y="27">(Triggers fresh PRM or UAV patrol)</text>
+
+    <!-- Legend 5: 3D Clearance Feedback -->
+    <line x1="1160" y1="12" x2="1195" y2="12" stroke="#0284c7" stroke-width="1.8" stroke-dasharray="3,3" />
+    <text class="node-sub" x="1203" y="15" font-weight="600">3D Clearance Feedback to Sr</text>
+    <text class="node-sub" x="1203" y="27">(Persistent clearance database)</text>
+  </g>
+</svg>
