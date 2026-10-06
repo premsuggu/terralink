@@ -131,3 +131,48 @@ class TestAddDeduplicatesExactRepeats:
         store.add(ResolvedRegion(x_min=-1.0, y_min=-1.0, x_max=1.0, y_max=1.0, passable=True))
         store.add(ResolvedRegion(x_min=-1.0, y_min=-1.0, x_max=1.0, y_max=1.0, passable=False))
         assert len(store._regions) == 2
+
+
+class TestPassableMask:
+    """`passable_mask` feeds the A* planner's force_free_mask."""
+
+    def _store(self, *regions):
+        from nav.resolved_regions import ResolvedRegionStore
+
+        store = ResolvedRegionStore()
+        for r in regions:
+            store.add(r)
+        return store
+
+    def test_empty_store_gives_an_all_false_mask(self):
+        mask = self._store().passable_mask((40, 40), 0.1, 0.0, 0.0)
+        assert mask.shape == (40, 40) and not mask.any()
+
+    def test_a_passable_region_is_marked_and_a_blocked_one_is_not(self):
+        from nav.resolved_regions import ResolvedRegion
+
+        store = self._store(
+            ResolvedRegion(-1.0, -1.0, 0.0, 0.0, passable=True),
+            ResolvedRegion(0.5, 0.5, 1.5, 1.5, passable=False),
+        )
+        mask = store.passable_mask((40, 40), 0.1, 0.0, 0.0)
+        assert mask[15, 15]  # inside the passable box (x=-0.5, y=-0.5)
+        assert not mask[28, 28]  # inside the blocked box (x=0.8, y=0.8)
+        assert not mask[0, 0]
+
+    def test_a_later_blocked_report_overrides_an_earlier_passable_one(self):
+        from nav.resolved_regions import ResolvedRegion
+
+        store = self._store(
+            ResolvedRegion(-1.0, -1.0, 1.0, 1.0, passable=True),
+            ResolvedRegion(-0.5, -0.5, 0.5, 0.5, passable=False),
+        )
+        mask = store.passable_mask((40, 40), 0.1, 0.0, 0.0)
+        assert mask[20 - 8, 20 - 8]  # in the outer passable ring
+        assert not mask[20, 20]  # centre was later reported blocked
+
+    def test_region_outside_the_grid_is_ignored(self):
+        from nav.resolved_regions import ResolvedRegion
+
+        store = self._store(ResolvedRegion(50.0, 50.0, 60.0, 60.0, passable=True))
+        assert not store.passable_mask((40, 40), 0.1, 0.0, 0.0).any()

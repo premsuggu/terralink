@@ -303,6 +303,25 @@ def _skip_reached_leading_waypoints(
     return index
 
 
+def _goal_to_resend(waypoints: list[tuple[float, float]] | None, next_index: int) -> tuple[float, float] | None:
+    """Pure helper, unit-testable without ROS: the waypoint whose goal was MOST
+    RECENTLY published (the one the robot should be driving toward right now),
+    or None if nothing has been published yet.
+
+    Why this exists (found live, in the "start at the planning stage" mode where
+    a plan is ready ~9 s after launch): a goal published while Nav2 was still
+    coming up was silently dropped. The stuck-recovery replan then returned the
+    IDENTICAL route (a deterministic planner), `_waypoints_effectively_equal`
+    treated it as "no change" and returned without publishing anything - so the
+    dropped goal was never retried and the UGV sat at its start for the whole
+    run. A stuck-recovery request must resend the goal even when the route did
+    not change.
+    """
+    if not waypoints or next_index <= 0:
+        return None
+    return waypoints[min(next_index, len(waypoints)) - 1]
+
+
 def _new_resolution_to_report(
     verdict: str,
     region: tuple[float, float, float, float] | None,
@@ -576,6 +595,9 @@ class WaypointFollower(Node):
         # arrives) rather than a fixed wall-clock delay.
         self._requested = False
         self._last_request_time: float | None = None
+        # Set when stuck recovery asks for a plan, so that an UNCHANGED answer
+        # still resends the current goal (see `_goal_to_resend`).
+        self._resend_goal_on_equal_plan = False
 
     def _frontier_callback(self, msg: Bool) -> None:
         self._current_plan_has_frontier = msg.data
@@ -771,6 +793,7 @@ class WaypointFollower(Node):
                         f"{self._current_xy}) - requesting a fresh plan (stuck recovery)."
                     )
                     self._last_progress_time = now
+                    self._resend_goal_on_equal_plan = True
                     self._request_plan()
 
         target = self._waypoints[self._next_index]
@@ -866,7 +889,17 @@ class WaypointFollower(Node):
         # bonus, not the fix for the stall below.
         if self._waypoints is not None and _waypoints_effectively_equal(self._waypoints, new_waypoints):
             self._last_replan_time = time.monotonic()
+            if self._resend_goal_on_equal_plan:
+                self._resend_goal_on_equal_plan = False
+                target = _goal_to_resend(self._waypoints, self._next_index)
+                if target is not None:
+                    self.get_logger().warn(
+                        f"stuck recovery: the route is unchanged, so resending the current goal {target} "
+                        "(it may have been dropped, e.g. published before Nav2 was ready)."
+                    )
+                    self._publish_goal(target)
             return
+        self._resend_goal_on_equal_plan = False
 
         self._waypoints = new_waypoints
         # See _skip_reached_leading_waypoints's own docstring for the real

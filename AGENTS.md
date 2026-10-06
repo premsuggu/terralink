@@ -96,6 +96,10 @@ terralink/
         ├── resource/
         └── nav/
             ├── prm_planner.py         # PRM path planning
+            ├── astar_planner.py       # A* grid planner (opt-in: planner_type:=astar)
+            ├── global_planner.py      # plan -> route memory -> exploration decision (shared by node + replay)
+            ├── plan_memory.py / exploration.py / mask_latch.py / map_growth.py / stuck_feedback.py
+            ├── replay.py              # offline replay of planning on saved maps (no simulator)
             ├── autopilot.py           # UAV autonomous flight logic
             ├── uav_autopilot_node.py  # UAV autopilot ROS node
             ├── planner_node.py        # PRM planner ROS node
@@ -248,6 +252,8 @@ ros2 launch nav nav_sim.launch.py headless:=true autonomous_uav:=true
 | 0s | Gazebo starts (`room_maze.world`) |
 | 5s | Bridges, TFs, elevation mapping, UAV autopilot start |
 | 9s | Nav2, PRM planner, UGV waypoint follower start |
+
+Optional: `planner_type:=astar` (A* planner; default `prm`). `tunnel_demo.launch.py` also takes `enable_exploration`, `anomaly_hold_sec`, `wait_for_mapping`, `stuck_feedback`. To test planning WITHOUT re-running the UAV scan, save a map once (`src/nav/scripts/save_map_snapshot.py`) and either re-plan offline (`replay_plan.py` / `replay_sequence.py`) or run the live Nav2/follower stack from the planning stage with `tunnel_demo.launch.py map_snapshot:=<file.npz>` (fixture: `tests/nav/fixtures/tunnel_test_parked.npz`) - see `docs/work-docs/nav/step07_astar_planner.md`.
 
 **Verification Checklist:**
 - [ ] Gazebo loads `room_maze.world`
@@ -669,6 +675,7 @@ ros2 run rviz2 rviz2 -d $(ros2 pkg prefix nav)/share/nav/rviz/nav.rviz
 
 ### Communication & Clarification
 - Never assume anything about requirements or implementation details.
+- When explaining something, in chat, always provide clear explanations like you are to a newbie. 
 - Always ask for clarifications if any requirements, specifications, or details are unclear.
 - Request explicit approval before making architectural decisions or significant changes.
 

@@ -74,7 +74,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, GroupAction, IncludeLaunchDescription, SetEnvironmentVariable, TimerAction
 from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import EnvironmentVariable, LaunchConfiguration
+from launch.substitutions import EnvironmentVariable, LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node, SetRemap
 
 
@@ -109,6 +109,59 @@ def generate_launch_description():
                     'be watched end to end with no manual /cmd_vel at all.'
     )
     autonomous_uav = LaunchConfiguration('autonomous_uav')
+
+    # Which global planner answers get_plan: 'prm' (original, default) or
+    # 'astar' (deterministic grid planner with robot-size inflation, route
+    # memory and standoff points - see nav/astar_planner.py and
+    # docs/work-docs/nav/step07_astar_planner.md). Opt-in until verified live.
+    planner_type_arg = DeclareLaunchArgument(
+        'planner_type', default_value='prm',
+        description="Global planner: 'prm' (default) or 'astar'."
+    )
+    anomaly_hold_sec_arg = DeclareLaunchArgument(
+        'anomaly_hold_sec', default_value='0.0',
+        description="Seconds a cell stays flagged anomalous after the detector last flagged it "
+                    "(0 = off). The detector flickers while the map is being built; a hold of a "
+                    "few tens of seconds keeps the tunnel route from appearing and disappearing."
+    )
+    # --- start-at-planning mode (skips the ~95 s UAV scan) ---
+    map_snapshot_arg = DeclareLaunchArgument(
+        'map_snapshot', default_value='',
+        description="Path to a .npz map snapshot (scripts/save_map_snapshot.py). If set, the UAV "
+                    "patrol and elevation_mapping_node are NOT started; map_replay_node publishes "
+                    "this saved map as /elevation_map instead, so planner/follower/Nav2/UGV run "
+                    "from the point where planning begins."
+    )
+    start_follower_arg = DeclareLaunchArgument(
+        'start_follower', default_value='true',
+        description="false = do not start the waypoint follower (the UGV stays parked) - used to "
+                    "capture a map snapshot without the UGV driving around."
+    )
+    # true when a snapshot path was given
+    use_snapshot = PythonExpression(["'", LaunchConfiguration('map_snapshot'), "' != ''"])
+
+    frontier_min_width_arg = DeclareLaunchArgument(
+        'frontier_min_width_m', default_value='-1.0',
+        description="Drop frontier cells whose unobserved region is thinner than this (meters). "
+                    "A strip narrower than the UGV is not a passage; on a top-down map it is nearly "
+                    "always an unscanned thin wall top. Negative = automatic (UGV diameter for "
+                    "planner_type:=astar, off for prm); 0 = off; 0.44 = UGV width."
+    )
+    stuck_feedback_arg = DeclareLaunchArgument(
+        'stuck_feedback', default_value='false',
+        description="astar only: if the UGV is handed a route but does not move for ~18 s, drop the "
+                    "stored route and penalise the stretch ahead so a different route can win."
+    )
+    wait_for_mapping_arg = DeclareLaunchArgument(
+        'wait_for_mapping', default_value='false',
+        description="astar only: hold back speculative targets (frontier gambles, frontier "
+                    "exploration) while the UAV is still adding to the map."
+    )
+    enable_exploration_arg = DeclareLaunchArgument(
+        'enable_exploration', default_value='false',
+        description="astar only: when no route to the goal exists, drive to the best frontier "
+                    "viewpoint to look around instead of giving up."
+    )
 
     resource_path = SetEnvironmentVariable(
         'GZ_SIM_RESOURCE_PATH',
@@ -185,6 +238,15 @@ def generate_launch_description():
             {'secondary_points_topic': '/ugv/camera/points', 'point_cloud_stride': 4},
         ],
         output='screen',
+        condition=UnlessCondition(use_snapshot),
+    )
+    map_replay_node = Node(
+        package='nav',
+        executable='map_replay_node',
+        name='map_replay_node',
+        parameters=[{'snapshot_path': LaunchConfiguration('map_snapshot')}],
+        output='screen',
+        condition=IfCondition(use_snapshot),
     )
 
     # --- UGV side ---
@@ -288,7 +350,16 @@ def generate_launch_description():
         # enable_anomaly_mode=true (step06 Phase 2) alongside frontier mode -
         # publishes /anomaly_map purely for inspection/verification; doesn't
         # change what get_plan actually returns yet (that's Phase 3).
-        parameters=[{'enable_frontier_mode': True, 'enable_anomaly_mode': True}],
+        parameters=[{
+            'enable_frontier_mode': True,
+            'enable_anomaly_mode': True,
+            'planner_type': LaunchConfiguration('planner_type'),
+            'enable_exploration': LaunchConfiguration('enable_exploration'),
+            'anomaly_hold_sec': LaunchConfiguration('anomaly_hold_sec'),
+            'wait_for_mapping': LaunchConfiguration('wait_for_mapping'),
+            'stuck_feedback': LaunchConfiguration('stuck_feedback'),
+            'frontier_min_width_m': LaunchConfiguration('frontier_min_width_m'),
+        }],
         output='screen',
     )
     # enable_frontier_replan=true - keep re-requesting a plan while the
@@ -323,6 +394,7 @@ def generate_launch_description():
             'enable_stuck_recovery': True,
         }],
         output='screen',
+        condition=IfCondition(LaunchConfiguration('start_follower')),
     )
     # step06 Phase 1's bounded 3D map, now actually consumed (Phase 4) -
     # default topics/frame already match what emap_bridge/nav_bridge
@@ -401,12 +473,14 @@ def generate_launch_description():
             ],
         }],
         output='screen',
-        condition=IfCondition(autonomous_uav),
+        condition=IfCondition(PythonExpression([
+            "'", autonomous_uav, "' == 'true' and '", LaunchConfiguration('map_snapshot'), "' == ''"
+        ])),
     )
 
     # --- Staggering (identical rationale to nav_sim.launch.py) ---
     bridges_and_tf_group = TimerAction(period=5.0, actions=[
-        emap_bridge, camera_static_tf, mapping_node, nav_bridge,
+        emap_bridge, camera_static_tf, mapping_node, map_replay_node, nav_bridge,
         ugv_odom_static_tf, ugv_lidar_static_tf, ugv_camera_static_tf,
         uav_autopilot_node, voxel_map_node,
     ])
@@ -418,6 +492,14 @@ def generate_launch_description():
         headless_arg,
         goal_x_arg,
         goal_y_arg,
+        map_snapshot_arg,
+        start_follower_arg,
+        planner_type_arg,
+        enable_exploration_arg,
+        wait_for_mapping_arg,
+        stuck_feedback_arg,
+        frontier_min_width_arg,
+        anomaly_hold_sec_arg,
         autonomous_uav_arg,
         resource_path,
         force_software_gl,

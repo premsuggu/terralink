@@ -53,7 +53,12 @@ def compute_walkable_mask(traversability: np.ndarray, is_valid: np.ndarray) -> n
     return np.asarray(is_valid).astype(bool) & (np.asarray(traversability) != LETHAL)
 
 
-def compute_frontier_mask(walkable_mask: np.ndarray, is_valid: np.ndarray) -> np.ndarray:
+def compute_frontier_mask(
+    walkable_mask: np.ndarray,
+    is_valid: np.ndarray,
+    min_unobserved_width_m: float = 0.0,
+    resolution: float | None = None,
+) -> np.ndarray:
     """The "frontier" concept from classical exploration literature
     (Yamauchi 1997): a cell that has never been observed, but sits directly
     next to a cell we already know is walkable. This is a NEW, separate
@@ -91,6 +96,19 @@ def compute_frontier_mask(walkable_mask: np.ndarray, is_valid: np.ndarray) -> np
             `walkable_mask` from stale/mismatched inputs would be a caller
             bug, not something this function can detect).
 
+        min_unobserved_width_m, resolution: if `min_unobserved_width_m > 0`
+            (and `resolution` is given), frontier cells that belong to an
+            unobserved region THINNER than this are dropped. Why: a strip of
+            unobserved cells narrower than the robot cannot be a passage no
+            matter what is inside it - and on a top-down map, thin unobserved
+            strips are overwhelmingly the unscanned top of a thin WALL (a real
+            0.15 m wall is only 1-2 cells wide), which looks exactly like
+            "unobserved cells between two free areas". Left in, planners
+            repeatedly "gamble" through walls (seen live, in every run).
+            The width of a region is estimated from its largest inscribed
+            circle; real unobserved space (occluded floor, the world beyond the
+            scanned area) is thick and is kept. Default 0 = off.
+
     Returns:
         A new (rows, cols) boolean array - True where a cell is currently
         unobserved AND 4-connected-adjacent to at least one walkable cell.
@@ -112,4 +130,34 @@ def compute_frontier_mask(walkable_mask: np.ndarray, is_valid: np.ndarray) -> np
         | padded[1:-1, :-2]  # neighbor one col left
         | padded[1:-1, 2:]  # neighbor one col right
     )
-    return unobserved & adjacent_to_walkable
+    frontier = unobserved & adjacent_to_walkable
+    if min_unobserved_width_m > 0 and resolution:
+        frontier = _drop_thin_unobserved(frontier, unobserved, min_unobserved_width_m, resolution)
+    return frontier
+
+
+def _drop_thin_unobserved(
+    frontier: np.ndarray, unobserved: np.ndarray, min_width_m: float, resolution: float
+) -> np.ndarray:
+    """Remove frontier cells whose LOCAL unobserved neighbourhood is too thin
+    to hold a disc of diameter `min_width_m`.
+
+    LOCAL matters: a thin wall-top seam usually runs into a big unobserved area
+    (the world beyond the scanned region), so judging the whole connected region
+    calls the seam thick. Instead, for each cell look at the deepest point of
+    unobserved space within a robot-sized neighbourhood: a cell inside a strip
+    `w` cells wide has distance ceil(w/2) to the nearest observed cell, so the
+    largest disc near it is about 2*depth - 1 cells across (a slight
+    under-estimate, which errs toward dropping marginal strips). Seam cells far
+    from the open area see only shallow depth and are dropped; cells right at a
+    real opening see the deep area and are kept.
+    """
+    from scipy import ndimage as ndi
+
+    depth = ndi.distance_transform_edt(unobserved)  # distance (cells) to the nearest observed cell
+    k = max(1, int(np.ceil(min_width_m / resolution / 2.0)))
+    yy, xx = np.mgrid[-k : k + 1, -k : k + 1]
+    footprint = (yy**2 + xx**2) <= k**2
+    local_depth = ndi.maximum_filter(depth, footprint=footprint)
+    width_cells = 2.0 * local_depth - 1.0
+    return frontier & (width_cells * resolution >= min_width_m)

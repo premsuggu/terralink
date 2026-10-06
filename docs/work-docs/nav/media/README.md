@@ -1,7 +1,7 @@
 # Recordings and 3D map exports
 
 > **Note**: All visual and media assets have been organized into the top-level `media/` directory:
-> - **Videos**: `media/videos/` (`overhead_view.mp4`, `overhead_view_labeled.mp4`, `uav_downward_view.mp4`, `ugv_pov.mp4`)
+> - **Videos**: `media/videos/` - `*_prm.mp4` were recorded with the original PRM planner (`overhead_view_prm`, `overhead_view_labeled_prm`, `uav_downward_view_prm`, `ugv_pov_prm`); `*_astar.mp4` with the A* planner (`overhead_view_astar`, `overhead_view_labeled_astar`) - see "A* planner videos" below
 > - **3D Map Exports & Viewer**: `media/3d_maps/` (`elevation_map.ply`, `voxel_map.ply`, `viewer.html`)
 > - **Figures & Architecture Diagrams**: `media/figures/` (`system_flow_diagram.svg`, `system_architecture_diagram.png`, etc.)
 > - **Reports**: `media/reports/` (`TerraLink_Project_Report.docx`)
@@ -14,10 +14,10 @@ history behind this scenario.
 
 ## Videos (located in `media/videos/`)
 
-- **`overhead_view.mp4`** - full-room top-down bird's-eye view captured from a high static ceiling camera (`0 0 7.65m`, pitched straight down - reframed, see "Third pass" below). Shows the entire environment: Room A, the divider wall, the tunnel in the center, and Room B, with the UAV flying overhead and the UGV crossing through the tunnel from start to goal.
-- **`overhead_view_labeled.mp4`** - labeled version of the above overhead view (`scripts/overlay_labels.py`, color-detection based): START/GOAL/UGV/UAV text labels drawn directly on the video plus a small legend in the bottom-left corner. The large fixed brown box straddling the wall is the TUNNEL STRUCTURE itself, not a robot.
-- **`uav_downward_view.mp4`** - the UAV drone's own downward-facing sensor camera (2.5m altitude), showing the close-up terrain scanned beneath the drone.
-- **`ugv_pov.mp4`** - the UGV's own dedicated recording camera (`video_camera_link` in `models/nav_ugv/model.sdf`), mounted higher and tilted much less than the UGV's real sensing camera (`front_camera_link`, which stays close-range/floor-facing on purpose - see that link's own comment) - so this one actually shows the room instead of just close-up floor.
+- **`overhead_view_prm.mp4`** *(PRM planner; renamed from `overhead_view.mp4`)* - full-room top-down bird's-eye view captured from a high static ceiling camera (`0 0 7.65m`, pitched straight down - reframed, see "Third pass" below). Shows the entire environment: Room A, the divider wall, the tunnel in the center, and Room B, with the UAV flying overhead and the UGV crossing through the tunnel from start to goal.
+- **`overhead_view_labeled_prm.mp4`** *(PRM planner; renamed from `overhead_view_labeled.mp4`)* - labeled version of the above overhead view (`scripts/overlay_labels.py`, color-detection based): START/GOAL/UGV/UAV text labels drawn directly on the video plus a small legend in the bottom-left corner. The large fixed brown box straddling the wall is the TUNNEL STRUCTURE itself, not a robot.
+- **`uav_downward_view_prm.mp4`** *(PRM planner; renamed from `uav_downward_view.mp4`)* - the UAV drone's own downward-facing sensor camera (2.5m altitude), showing the close-up terrain scanned beneath the drone.
+- **`ugv_pov_prm.mp4`** *(PRM planner; renamed from `ugv_pov.mp4`)* - the UGV's own dedicated recording camera (`video_camera_link` in `models/nav_ugv/model.sdf`), mounted higher and tilted much less than the UGV's real sensing camera (`front_camera_link`, which stays close-range/floor-facing on purpose - see that link's own comment) - so this one actually shows the room instead of just close-up floor.
 
 All four are real H.264-in-MP4 files (`avc1` fourcc, confirmed live via
 OpenCV/FFmpeg), each at its own measured actual frame rate (not a flat
@@ -27,6 +27,21 @@ rate because this sandbox does CPU-only software rendering under real
 load. Play with any video player (VLC, mpv, the OS's default player, a
 browser) - trimmed to ~224s (the UGV's actual crossing plus ~15s settled
 at the goal), not the full multi-minute raw capture.
+
+## A* planner videos (2026-10-07)
+
+Same overhead camera, same tools (`scripts/record_run.py`, then `scripts/overlay_labels.py`), same world and goal as the PRM videos above, recorded from one headless `tunnel_demo` run with the A* planner:
+
+```bash
+ros2 launch nav tunnel_demo.launch.py headless:=true planner_type:=astar wait_for_mapping:=true anomaly_hold_sec:=30.0
+python3 src/nav/scripts/record_run.py --out-dir /tmp/rec --duration 400      # started a few seconds after launch
+python3 src/nav/scripts/overlay_labels.py --in /tmp/rec/overhead_view.mp4 --out /tmp/rec/overhead_view_labeled.mp4
+```
+
+- **`overhead_view_astar.mp4`** - the whole run (562 frames, ~114 s at ~4.9 fps, H.264): the UAV flies over the rooms and maps while the UGV waits at the green START marker (`wait_for_mapping` holds it until the map is worth planning on), then the UGV drives through the tunnel (hidden under its roof from above) and settles on the red GOAL marker.
+- **`overhead_view_labeled_astar.mp4`** - the same video with START/GOAL/UGV/UAV labels (the UAV label is only detected in ~64 of 562 frames - it relies on spotting the drone's orange rotors, the same limitation as the PRM labeled video).
+
+Ground-truth numbers for this run (`/ugv/odom_ground_truth`): first movement at 57.6 s, within 0.3 m of the goal at 101.3 s (43.7 s later), 8.7 m driven for a 6.0 m straight-line trip. That is slower and longer than the best A* runs in `step07_astar_planner.md` (16-29 s, 5.8-6.9 m, n=2) - recording the cameras adds rendering load and this was a single run, so treat the video as an illustration of the behaviour, not as a benchmark. Only the overhead videos were kept for A*; no `uav_downward`/`ugv_pov` A* versions were made.
 
 ## Second pass (2026-09-24) - what was actually wrong and how it was found
 

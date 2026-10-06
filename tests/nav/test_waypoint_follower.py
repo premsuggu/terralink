@@ -11,6 +11,7 @@ for its own timing/cooldown checks (e.g. this mirrors the retry_interval_sec
 idea already used elsewhere in this same file).
 """
 from nav.waypoint_follower import (
+    _goal_to_resend,
     _made_progress,
     _new_resolution_to_report,
     _plan_is_tentative,
@@ -181,3 +182,28 @@ class TestNewResolutionToReport:
     def test_a_different_region_is_reportable_even_with_the_same_verdict(self):
         other_region = (2.0, -0.3, 3.9, 0.3)
         assert _new_resolution_to_report("passable", other_region, (self._REGION, "passable")) is True
+
+
+class TestGoalToResend:
+    """REAL BUG FOUND LIVE (start-at-the-planning-stage mode): a goal published
+    before Nav2 was ready was dropped; a deterministic planner then returned
+    the identical route to every stuck-recovery request, which the follower
+    treated as "no change" - so nothing was ever resent."""
+
+    WPS = [(0.0, 0.0), (1.0, 0.0), (2.0, 0.0), (3.0, 0.0)]
+
+    def test_nothing_published_yet_means_nothing_to_resend(self):
+        assert _goal_to_resend(self.WPS, 0) is None
+
+    def test_resends_the_most_recently_published_waypoint(self):
+        # next_index is the NEXT one to publish, so the one in flight is next_index - 1
+        assert _goal_to_resend(self.WPS, 1) == (0.0, 0.0)
+        assert _goal_to_resend(self.WPS, 3) == (2.0, 0.0)
+
+    def test_after_the_last_waypoint_was_published_it_is_the_one_resent(self):
+        assert _goal_to_resend(self.WPS, 4) == (3.0, 0.0)
+        assert _goal_to_resend(self.WPS, 99) == (3.0, 0.0)  # clamped, never an IndexError
+
+    def test_no_plan_means_nothing_to_resend(self):
+        assert _goal_to_resend(None, 3) is None
+        assert _goal_to_resend([], 3) is None

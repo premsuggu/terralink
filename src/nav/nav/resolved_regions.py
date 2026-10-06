@@ -156,3 +156,31 @@ class ResolvedRegionStore:
                 anomaly_mask[row_lo:row_hi, col_lo:col_hi] = False
 
         return walkable_mask, anomaly_mask
+
+    def passable_mask(
+        self,
+        shape: tuple[int, int],
+        resolution: float,
+        center_x: float,
+        center_y: float,
+    ) -> np.ndarray:
+        """Boolean mask of every cell inside a region reported PASSABLE.
+
+        `nav.astar_planner` uses this as its `force_free_mask`: cells a real
+        3D check confirmed traversable must not be closed again by inflation
+        from the real walls next to them (the verification box is padded, so
+        it always reaches a little way into neighbouring clearance bands).
+        A later BLOCKED report over the same cells wins, matching `apply`'s
+        "later report wins" rule.
+        """
+        mask = np.zeros(shape, dtype=bool)
+        n_rows, n_cols = shape
+        for region in self._regions:
+            r0, c0 = world_to_grid(region.x_min, region.y_min, center_x, center_y, resolution, n_rows)
+            r1, c1 = world_to_grid(region.x_max, region.y_max, center_x, center_y, resolution, n_rows)
+            row_lo, row_hi = max(0, int(min(r0, r1))), min(n_rows, int(max(r0, r1)) + 1)
+            col_lo, col_hi = max(0, int(min(c0, c1))), min(n_cols, int(max(c0, c1)) + 1)
+            if row_lo >= row_hi or col_lo >= col_hi:
+                continue
+            mask[row_lo:row_hi, col_lo:col_hi] = region.passable
+        return mask

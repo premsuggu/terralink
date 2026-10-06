@@ -78,6 +78,13 @@ def generate_launch_description():
     )
     autonomous_uav = LaunchConfiguration('autonomous_uav')
 
+    # Which global planner answers get_plan: 'prm' (original, default) or
+    # 'astar' (see nav/astar_planner.py). Opt-in until verified live.
+    planner_type_arg = DeclareLaunchArgument(
+        'planner_type', default_value='prm',
+        description="Global planner: 'prm' (default) or 'astar'."
+    )
+
     # model://nav_ugv (this package) and model://iris_quad (emap) both need
     # to resolve - same pattern as emap/launch/uav_sim.launch.py's own
     # resource_path action, just listing both packages' models/ dirs.
@@ -247,6 +254,7 @@ def generate_launch_description():
         package='nav',
         executable='planner_node',
         name='planner_node',
+        parameters=[{'planner_type': LaunchConfiguration('planner_type')}],
         output='screen',
     )
     prm_waypoint_follower = Node(
@@ -294,6 +302,7 @@ def generate_launch_description():
         headless_arg,
         goal_x_arg,
         goal_y_arg,
+        planner_type_arg,
         autonomous_uav_arg,
         resource_path,
         force_software_gl,

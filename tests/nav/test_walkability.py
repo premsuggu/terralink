@@ -103,3 +103,62 @@ class TestComputeFrontierMask:
         is_valid = np.array([[0, 1], [1, 1]])
         frontier = compute_frontier_mask(walkable, is_valid)
         assert frontier.tolist() == [[True, False], [False, False]]
+
+
+class TestFrontierThinStripPruning:
+    """A strip of unobserved cells narrower than the robot is not a passage
+    (on a top-down map it is nearly always an unscanned thin WALL TOP)."""
+
+    RES = 0.1
+
+    def _world(self):
+        # two free rooms either side of a 2-cell-thick unobserved "wall"; the
+        # wall runs down into a big unobserved area at the bottom
+        n = 60
+        walkable = np.zeros((n, n), dtype=bool)
+        valid = np.ones((n, n), dtype=bool)
+        walkable[:40, :29] = True
+        walkable[:40, 31:] = True
+        valid[:40, 29:31] = False  # the thin seam
+        valid[40:, :] = False  # a big unobserved area below
+        return walkable, valid
+
+    def test_without_pruning_the_seam_is_frontier(self):
+        w, v = self._world()
+        f = compute_frontier_mask(w, v)
+        assert f[10, 29] and f[10, 30]
+
+    def test_a_thin_seam_is_dropped_with_pruning(self):
+        w, v = self._world()
+        f = compute_frontier_mask(w, v, min_unobserved_width_m=0.44, resolution=self.RES)
+        assert not f[10, 29] and not f[10, 30]
+        assert not f[20, 29]
+
+    def test_a_seam_attached_to_a_big_area_is_still_dropped_away_from_the_junction(self):
+        # the component-level thickness would call this seam thick, because it
+        # connects to the big area - the check has to be local
+        w, v = self._world()
+        f = compute_frontier_mask(w, v, min_unobserved_width_m=0.44, resolution=self.RES)
+        assert not f[5, 29]  # far up the seam
+
+    def test_real_open_unobserved_space_is_kept(self):
+        w, v = self._world()
+        f = compute_frontier_mask(w, v, min_unobserved_width_m=0.44, resolution=self.RES)
+        assert f[40, 5]  # the unobserved row just below the room's edge
+        assert f[40, 50]
+
+    def test_a_wide_gap_is_kept(self):
+        n = 60
+        w = np.zeros((n, n), dtype=bool)
+        v = np.ones((n, n), dtype=bool)
+        w[:, :20] = True
+        w[:, 40:] = True
+        v[:, 20:40] = False  # 2 m of unobserved space between two free areas
+        f = compute_frontier_mask(w, v, min_unobserved_width_m=0.44, resolution=self.RES)
+        assert f[30, 20] and f[30, 39]
+
+    def test_default_is_unchanged(self):
+        w, v = self._world()
+        assert np.array_equal(
+            compute_frontier_mask(w, v), compute_frontier_mask(w, v, min_unobserved_width_m=0.0, resolution=0.1)
+        )

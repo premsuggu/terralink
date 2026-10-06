@@ -42,6 +42,7 @@ setup(
             'waypoint_follower = nav.waypoint_follower:main',
             'uav_autopilot_node = nav.uav_autopilot_node:main',
             'voxel_map_node = nav.voxel_map_node:main',
+            'map_replay_node = nav.map_replay_node:main',
         ],
     },
 )
