@@ -1,20 +1,27 @@
 # Recordings and 3D map exports
 
+> **Note**: All visual and media assets have been organized into the top-level `media/` directory:
+> - **Videos**: `media/videos/` (`overhead_view.mp4`, `overhead_view_labeled.mp4`, `uav_downward_view.mp4`, `ugv_pov.mp4`)
+> - **3D Map Exports & Viewer**: `media/3d_maps/` (`elevation_map.ply`, `voxel_map.ply`, `viewer.html`)
+> - **Figures & Architecture Diagrams**: `media/figures/` (`system_flow_diagram.svg`, `system_architecture_diagram.png`, etc.)
+> - **Reports**: `media/reports/` (`TerraLink_Project_Report.docx`)
+
 Generated from a real, ground-truth-verified `tunnel_demo.launch.py` run
 (headless mode this time - see "Second pass" below for why) - the UGV
 starting in room A, crossing the tunnel, and settling at the goal in room
 B. See `../step06_hybrid_3d_voxel_navigation.md` for the full technical
 history behind this scenario.
 
-## Videos
+## Videos (located in `media/videos/`)
 
-- **`overhead_view.mp4`** - full-room top-down bird's-eye view captured from a high static ceiling camera (`0 0 7.65m`, pitched straight down - reframed, see "Third pass" below), reframed to fill nearly the whole frame with the room instead of leaving a large wasted margin. Shows the entire environment: Room A, the divider wall, the tunnel in the center, and Room B, with the UAV flying overhead and the UGV crossing through the tunnel from start to goal. **Labeled**: START/GOAL/UGV/UAV text labels are drawn directly on the video (`scripts/overlay_labels.py`, color-detection based) plus a small legend in the bottom-left corner - no more guessing what's what. The large fixed brown box straddling the wall is the TUNNEL STRUCTURE itself, not a robot.
+- **`overhead_view.mp4`** - full-room top-down bird's-eye view captured from a high static ceiling camera (`0 0 7.65m`, pitched straight down - reframed, see "Third pass" below). Shows the entire environment: Room A, the divider wall, the tunnel in the center, and Room B, with the UAV flying overhead and the UGV crossing through the tunnel from start to goal.
+- **`overhead_view_labeled.mp4`** - labeled version of the above overhead view (`scripts/overlay_labels.py`, color-detection based): START/GOAL/UGV/UAV text labels drawn directly on the video plus a small legend in the bottom-left corner. The large fixed brown box straddling the wall is the TUNNEL STRUCTURE itself, not a robot.
 - **`uav_downward_view.mp4`** - the UAV drone's own downward-facing sensor camera (2.5m altitude), showing the close-up terrain scanned beneath the drone.
 - **`ugv_pov.mp4`** - the UGV's own dedicated recording camera (`video_camera_link` in `models/nav_ugv/model.sdf`), mounted higher and tilted much less than the UGV's real sensing camera (`front_camera_link`, which stays close-range/floor-facing on purpose - see that link's own comment) - so this one actually shows the room instead of just close-up floor.
 
-All three are real H.264-in-MP4 files (`avc1` fourcc, confirmed live via
+All four are real H.264-in-MP4 files (`avc1` fourcc, confirmed live via
 OpenCV/FFmpeg), each at its own measured actual frame rate (not a flat
-assumption) - `overhead_view.mp4` and `uav_downward_view.mp4` at ~6.3-6.9
+assumption) - `overhead_view*.mp4` and `uav_downward_view.mp4` at ~6.3-6.9
 fps, `ugv_pov.mp4` at ~3.5 fps, all lower than the cameras' 10Hz nominal
 rate because this sandbox does CPU-only software rendering under real
 load. Play with any video player (VLC, mpv, the OS's default player, a
@@ -103,10 +110,10 @@ python3 src/nav/scripts/overlay_labels.py --in /path/overhead_view.mp4 --out /pa
 
 ## System Architecture & Flow Diagrams
 
-- **`system_flow_diagram.svg`** - high-resolution, vector flow diagram showing the full autonomous navigation pipeline: sensing, elevation mapping, PRM planning, all 4 decision pathways (confirmed, frontier, anomaly, blocked), and 3D voxel headroom verification.
-- **`SYSTEM_FLOW.md`** - detailed Markdown specification with full Mermaid flowchart and complete technical breakdown of every branch and edge case.
+- **`media/figures/system_flow_diagram.svg`** - high-resolution, vector flow diagram showing the full autonomous navigation pipeline: sensing, elevation mapping, PRM planning, all 4 decision pathways (confirmed, frontier, anomaly, blocked), and 3D voxel headroom verification.
+- **`SYSTEM_FLOW.md`** - detailed Markdown specification with full Mermaid flowchart and complete technical breakdown of every branch and edge case (located in this directory).
 
-## 3D map exports (PLY point clouds)
+## 3D map exports (PLY point clouds, located in `media/3d_maps/`)
 
 - **`elevation_map.ply`** - the UAV-built 2.5D elevation map, one colored
   point per observed grid cell at its real (x, y, elevation). Colored by
@@ -116,7 +123,7 @@ python3 src/nav/scripts/overlay_labels.py --in /path/overhead_view.mp4 --out /pa
   Phase 1), one colored point per OCCUPIED voxel. Unlike the elevation map,
   this can represent the tunnel's roof and floor as two distinct surfaces
   at the same (x, y) - colored by height (blue = low, red = high).
-- **`viewer.html`** - local, interactive 3D WebGL viewer for opening and orbiting both `.ply` point clouds directly in any web browser with zero installation.
+- **`viewer.html`** - local, interactive 3D WebGL viewer for opening and orbiting both `.ply` point clouds directly in any web browser with zero installation (placed alongside `.ply` files in `media/3d_maps/`).
 
 Open either with `viewer.html` or any standard point-cloud/mesh viewer that reads PLY:
 **MeshLab** (free, cross-platform - probably the easiest), **CloudCompare**,

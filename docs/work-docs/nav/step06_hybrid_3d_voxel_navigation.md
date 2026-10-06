@@ -672,8 +672,8 @@ solves), `ugv_pov.mp4` (1974 frames, first-person), `elevation_map.ply`
 capturing the dividing wall's real height, something the 2.5D elevation
 map structurally cannot). All four verified openable/valid (`cv2.
 VideoCapture` for the videos, a direct PLY-header/point-count/coordinate-
-range check for the point clouds) before being copied to `docs/work-docs/
-nav/media/` (see that directory's own `README.md` for what each file is and
+range check for the point clouds) before being copied to `media/`
+(see `docs/work-docs/nav/media/README.md` for what each file is and
 how to view it). One real bug found and fixed along the way: the first
 `export_voxel_map.py` live test published its trigger message before DDS
 discovery between the fresh publisher and `voxel_map_node`'s subscription
@@ -795,5 +795,5 @@ not a real resource problem) - see that link's own updated SDF comment.
 All three deliverables regenerated end to end from one more real,
 ground-truth-verified run (`/model/nav_ugv/odometry` settled at (3.110,
 -0.155), 0.19m from the (3.0, 0.0) goal, held for 45+ real seconds) and
-copied to `docs/work-docs/nav/media/` (see that directory's own "Third
-pass" README section).
+copied to `media/` (see `docs/work-docs/nav/media/README.md`'s own "Third
+pass" section).
