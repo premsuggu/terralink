@@ -141,4 +141,5 @@ Run: `source /opt/ros/humble/setup.bash && cd tests/nav && python3 -m pytest -v`
 * Goal docking (E2 stopped at 0.306 m, idle) and Nav2's DWB in the 1.0 m tunnel remain; `docs/resource/05` phases 1 and 3 (continuous `FollowPath`, Regulated Pure Pursuit, inflation 0.40) are the next biggest lever and are **not** part of this step.
 * Only the follower's goal-resend was fixed; it still sends one goal per waypoint (stop-and-go).
 * 2D only: overlapping walkable levels (bridges, multi-storey) are not representable.
+* Compute (measured later, see `sota_comparison_and_roadmap.md` §4): A* plan ~64 ms vs PRM ~1.05 s on the fixture map; 3 searches per plan = ~65 % of A* time, so lazy passes / a compiled search loop are the cheap wins. Whole-pipeline cost (mapping, voxel map, Nav2) is not profiled.
 * Default stays `prm`; flipping it, and making `wait_for_mapping` the default for `astar`, are decisions for you.

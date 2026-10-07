@@ -25,7 +25,7 @@ This directory contains reference papers, literature reviews, root cause analyse
    - **Costmap Inflation Overlap** ([`nav2_params.yaml`](file:///home/prem/terralink/src/nav/config/nav2_params.yaml)): An inflation radius of $0.55\text{ m}$ in a $1.0\text{ m}$ tunnel causes wall inflation zones to overlap, leaving no zero-cost path and forcing DWB to throttle speed down to $0.15\text{ m/s}$.
    - **Uncoordinated Aerial Patrol** ([`tunnel_demo.launch.py`](file:///home/prem/terralink/src/nav/launch/tunnel_demo.launch.py)): The UAV flies an open-loop room orbit with dwell delays, forcing the ground vehicle to wait 35–40 seconds before obtaining its first plan.
 
-2. **The Recommended Path Forward**:
+2. **The Recommended Path Forward** *(note: the planner recommendation below was written before step 07; we built a deterministic A* planner instead of Theta\*, see `docs/work-docs/nav/step07_astar_planner.md`; the execution recommendations are still open)*:
    - Upgrade trajectory dispatch to continuous **`FollowPath`** or **`NavigateThroughPoses`**, eliminating all intermediate stops.
    - Implement **Theta\*** (optimal any-angle search) with **Medial-Axis corridor centering** and B-spline smoothing.
    - Replace DWB with **Regulated Pure Pursuit (RPP)** and adjust inflation radius to $0.40\text{ m}$.

@@ -215,9 +215,11 @@ def create_report():
         "from planar partition walls via elevation differentials. When potential occlusions are detected, a hierarchical Probabilistic Roadmap (PRM) "
         "routes a tentative path charged with an anomaly cost penalty (20×). Ground truth vertical clearance is verified on-the-fly through an in-process "
         "octree (BoundedVoxelMap) with radial spatial eviction (12m radius). Verified headroom verdicts are persistently retained in a bidirectional "
-        "memory loop (ResolvedRegionStore) to eliminate query oscillations. The system has been validated across 176 automated unit tests and extensive "
-        "simulation benchmarks in Ignition Fortress. The UGV autonomously negotiates an occluded tunnel corridor, achieving complete transit in 133–153s "
-        "with zero operator intervention. Furthermore, we document the critical physical, simulation, and coordination defects encountered during "
+        "memory loop (ResolvedRegionStore) to eliminate query oscillations. A deterministic, opt-in A* grid planner with explicit free/blocked/uncertain cell "
+        "classes, route memory and a replay-based test workflow was added as a second global planner; in the tunnel world it reached the goal about 16 s after "
+        "first movement versus about 28 s for PRM (three runs each, simulation only, one world). The system has been validated across 412 automated unit tests "
+        "(368 nav, 44 emap) and simulation benchmarks in Ignition Fortress. The UGV autonomously negotiates an occluded tunnel corridor with zero operator "
+        "intervention. Furthermore, we document the critical physical, simulation, and coordination defects encountered during "
         "development and provide the exact mathematical and algorithmic solutions that ensured end-to-end stability."
     )
     r_abst.font.name = 'Times New Roman'
@@ -232,7 +234,7 @@ def create_report():
     r_kwh.font.name = 'Times New Roman'
     r_kwh.font.bold = True
     r_kwh.font.size = Pt(9.0)
-    r_kwt = p_kw.add_run("Heterogeneous Robotics, UAV-UGV Collaboration, 2.5D Elevation Mapping, OctoMap, PRM Path Planning, Nav2, Anomaly Detection.")
+    r_kwt = p_kw.add_run("Heterogeneous Robotics, UAV-UGV Collaboration, 2.5D Elevation Mapping, OctoMap, PRM and A* Path Planning, Nav2, Anomaly Detection.")
     r_kwt.font.name = 'Times New Roman'
     r_kwt.font.italic = True
     r_kwt.font.size = Pt(9.0)
@@ -297,7 +299,10 @@ def create_report():
         "(nav.voxel_map) executed in-process with automated spatial leaf eviction.\n"
         "4) A bidirectional memory loop (nav.resolved_regions) that caches verified volumetric verdicts to guarantee planner convergence without "
         "query oscillation or redundant inspections.\n"
-        "5) Exhaustive empirical verification in simulation, identifying and correcting five subtle physics, timing, and behavioral failure modes."
+        "5) Exhaustive empirical verification in simulation, identifying and correcting five subtle physics, timing, and behavioral failure modes.\n"
+        "6) An opt-in deterministic A* global planner (nav.astar_planner, nav.global_planner) that treats suspected passages and unobserved space as explicit "
+        "uncertain cell classes, with route memory, exploration and stuck feedback, plus an offline map-replay workflow that tests planning without re-running "
+        "the UAV scan."
     )
 
     # --- SECTION II: ARCHITECTURE ---
@@ -485,7 +490,7 @@ def create_report():
     )
 
     # --- SECTION VI: PRM & EXECUTION ---
-    add_sec_head("VI. HIERARCHICAL PRM PLANNING & MOTION CONTROL")
+    add_sec_head("VI. GLOBAL PLANNING (PRM AND A*) & MOTION CONTROL")
     add_subsec_head("A. Hierarchical PRM Planner")
     add_p(
         "Global path planning is performed on demand by nav.prm_planner.plan. Standard PRM implementations fail in closed-loop navigation when the robot's own chassis "
@@ -499,7 +504,33 @@ def create_report():
         "when no alternative exists."
     )
 
-    add_subsec_head("B. Motion Execution & Preemption Race Prevention")
+    add_subsec_head("B. Deterministic A* Planner (opt-in, planner_type:=astar)")
+    add_p(
+        "Random sampling can miss a 1 m tunnel and gives different routes for nearly identical maps. The A* planner (nav.astar_planner) searches an 8-connected "
+        "cost grid with an octile heuristic, no diagonal corner cutting and a deterministic tie-break, so equal maps give equal paths and a path is found "
+        "whenever one exists at grid resolution. Obstacles are inflated by robot radius plus margin, minus a 0.1 m rim already contained in emap's lethal "
+        "mask. Cells are free, blocked or uncertain (suspected passage from nav.anomaly, or unobserved space next to free ground). Search runs in passes so "
+        "a confirmed route always beats a guess: strict (free cells only), then optimistic (uncertain cells added with a penalty), each at full then relaxed "
+        "inflation. Paths are shortened by supercover line of sight, cost-aware on free ground, and a standoff waypoint is placed 1 m before an uncertain "
+        "stretch where the UGV should stop and look."
+    )
+    add_p(
+        "A shared decision layer (nav.global_planner) adds route memory (a stored route is kept unless it became invalid, a confirmed route replaced a tentative "
+        "one, or a new route is at least 15% cheaper), exploration toward suspected passages and then frontier viewpoints, an anomaly hold against detector "
+        "flicker, a wait-for-mapping gate, and stuck feedback that penalizes the route stretch ahead of a stalled robot. All of these are off by default "
+        "except route memory. The same class is used by the ROS node and by the offline replay tool, so offline results reflect the live planner.",
+        bold_prefix="Decisions around the planner: "
+    )
+    add_p(
+        "A real finding: a 0.15 m wall is only one or two 0.1 m cells wide, so part of it is unobserved rather than lethal and appears as a thin frontier line. "
+        "Both planners treated it as a possible passage and repeatedly drove at the wall. Dropping unobserved strips thinner than the robot diameter "
+        "(frontier_min_width_m = 0.44 m, automatic for A*) removed this; without it A* reached the goal in 0 of 3 runs. A second finding concerned clearance: the "
+        "live detector flags only about 3x3 cells at each tunnel mouth, narrower than the robot, so demanding full clearance there returned no path where PRM's "
+        "zero-width line of sight succeeded; uncertain cells are therefore exempt from the clearance test in the optimistic pass (uncertain_waive_m = 0.5 m).",
+        bold_prefix="Lessons from real maps: "
+    )
+
+    add_subsec_head("C. Motion Execution & Preemption Race Prevention")
     add_p(
         "The node waypoint_follower receives PRM paths and interfaces with Nav2's bt_navigator via sequential /goal_pose dispatches. During live trials, a severe "
         "behavior-tree race condition was identified: because waypoint 0 corresponds to the UGV's current position, publishing waypoint 0 followed immediately "
@@ -509,7 +540,9 @@ def create_report():
     )
     add_p(
         "Supervisory Watchdog: To handle Nav2 controller exhaustion near physical walls ('Controller patience exceeded'), waypoint_follower incorporates a progress "
-        "watchdog (_made_progress). If spatial displacement Δd < 0.15m over 20s, stuck recovery resets goal tracking and requests an immediate fresh plan.",
+        "watchdog (_made_progress). If spatial displacement Δd < 0.15m over 20s, stuck recovery resets goal tracking and requests an immediate fresh plan. "
+        "With a deterministic planner the fresh plan can be identical, which the follower used to treat as no change, so a goal dropped while Nav2 was still "
+        "starting was never resent; stuck recovery now resends the current goal when the plan is unchanged.",
         bold_prefix="Stuck Recovery: "
     )
 
@@ -547,6 +580,10 @@ def create_report():
         ("nav.voxel_map", "Required Headroom Clearance", "0.40 m (0.25m chassis + 0.15m margin)"),
         ("nav.prm_planner", "Node Samples (N) / Connect Radius", "400 nodes / 3.0 m"),
         ("nav.prm_planner", "Anomaly Edge Penalty Factor", "20.0× Distance Weight"),
+        ("nav.astar_planner", "Robot radius / Margin / Mask rim", "0.22 m / 0.05 m / 0.10 m"),
+        ("nav.astar_planner", "Standoff / Uncertain waiver", "1.0 m / 0.5 m (optimistic pass)"),
+        ("nav.global_planner", "Plan switch margin / Stuck window", "15% cost / 18 s"),
+        ("nav.walkability", "Frontier min width (A* auto)", "0.44 m (robot diameter)"),
         ("UGV Actuation", "Cruise Speed / Accel Limit", "0.60 m/s / 3.50 m/s² (DiffDrive)"),
         ("Safety Watchdog", "cmd_vel Timeout / Stuck Radius", "1.0 s silence / 0.15 m over 20 s"),
     ]
@@ -611,11 +648,62 @@ def create_report():
         doc.add_picture(fig4_path, width=Inches(3.3))
         add_fig_caption("Fig. 4.", "Experimental sequence of the autonomous tunnel traversal: (a) Start at green marker, (b) Mid-tunnel transit beneath ceiling occlusion, (c) Convergence at red goal marker, and (d) Onboard video camera perspective.")
 
-    add_subsec_head("C. Test Suite Verification")
+    add_subsec_head("C. Planner Comparison: PRM versus A*")
     add_p(
-        "To enforce architectural integrity without simulator overhead, the repository contains 13 dedicated test suites spanning tests/emap and tests/nav. "
-        "All 176 automated unit tests execute in 6.73s, confirming coordinate math, Bayesian fusion invariants, Mahalanobis rejection, Bresenham rasterization, "
-        "OctoMap eviction, and Dijkstra cost weights in pure Python/NumPy isolation."
+        "Both planners were run in tunnel_test.world with goal (3, 0), a 6.0 m straight-line start-to-goal distance, headless, using the ground-truth "
+        "odometry topic. Move-to-arrive is the time from first movement to within 0.3 m of the goal; stalled time counts 5 s windows with under 0.1 m net "
+        "movement. In start-at-planning mode the UAV scan is skipped and the saved finished map is replayed, which isolates planning and following from "
+        "scan timing (three runs per configuration). Table III summarises it; all PRM numbers include the flag and goal-resend fixes described above."
+    )
+    add_tbl_caption("TABLE III", "PRM VERSUS A* IN THE TUNNEL WORLD (SIMULATION, ONE WORLD, ONE GOAL)")
+    tbl3 = doc.add_table(rows=1, cols=5)
+    tbl3.alignment = WD_TABLE_ALIGNMENT.CENTER
+    hdr3 = tbl3.rows[0].cells
+    for c, t in zip(hdr3, ["Configuration", "Runs", "Reached", "Move-to-arrive", "Driven / stalled"]):
+        c.text = t
+        set_cell_background(c, "F1F5F9")
+        c.paragraphs[0].runs[0].font.bold = True
+        c.paragraphs[0].runs[0].font.size = Pt(8.5)
+        c.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+    cmp_data = [
+        ("Clean map: PRM", "3", "3/3", "28.0 s mean", "6.5 m / 5 s"),
+        ("Clean map: A*, no thin-strip pruning", "3", "0/3", "-", "3.2-3.9 m / 115-130 s"),
+        ("Clean map: A* (defaults)", "3", "3/3", "15.8 s mean", "5.8 m / 0 s"),
+        ("Clean map: A* + exploration + stuck", "3", "3/3", "17.5 s mean", "5.8-6.5 m / 0 s"),
+        ("Full run: PRM", "1", "yes", "112.5 s", "17.3 m / 45 s"),
+        ("Full run: A* (defaults)", "2", "1/2", "74.2 s (one run stalled 0.306 m short)", "16.3 m / 0 s"),
+        ("Full run: A* + hold 30 s + wait-for-mapping", "2", "2/2", "16.3 s and 28.8 s", "5.8-6.9 m / 0 s"),
+    ]
+    for row_vals in cmp_data:
+        row = tbl3.add_row().cells
+        for i, (c, v) in enumerate(zip(row, row_vals)):
+            c.text = v
+            c.paragraphs[0].runs[0].font.size = Pt(8.0)
+            if i > 0:
+                c.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+    apply_academic_table_borders(tbl3)
+    add_p(
+        "In the clean three-run comparison A* with pruning reached the goal about 44% sooner after first movement and drove about 11% less than PRM, and the "
+        "run-to-run spread was small. In full mode, A* with the wait-for-mapping gate matches the clean behaviour, and total arrival time (97-110 s) was no "
+        "worse than PRM's (98-147 s), but those rows have only one or two runs each. Exploration and stuck feedback showed no benefit on this static map. "
+        "Not demonstrated: other worlds or goals, robustness of the 0.44 m pruning width to other wall thicknesses, and the goal-docking edge (one run stopped "
+        "6 mm outside the arrival threshold). The default planner therefore remains PRM.",
+        bold_prefix="Reading: "
+    )
+    add_p(
+        "Measured on the saved 160x160 tunnel map (0.1 m cells, single CPU thread), one A* plan takes about 64 ms, mask construction 3.5 ms, and one PRM plan "
+        "about 1.05 s. Three grid searches per plan account for about two thirds of the A* time. Mapping, voxel-map and Nav2 costs were not re-profiled for "
+        "this table.",
+        bold_prefix="Planner compute: "
+    )
+
+    add_subsec_head("D. Test Suite Verification")
+    add_p(
+        "To enforce architectural integrity without simulator overhead, the repository contains 25 test files spanning tests/emap and tests/nav "
+        "(19 nav, 6 emap). The 368 nav tests run in about 43 s and the 44 CPU emap tests in under 1 s (the GPU fusion test is skipped and the emap folder "
+        "must be run file by file in this environment because a cupy import fails against the installed numpy). They cover coordinate math, Bayesian fusion "
+        "invariants, Mahalanobis rejection, Bresenham and supercover rasterization, OctoMap eviction, Dijkstra cost weights, A* optimality and completeness "
+        "cases, route memory, exploration, stuck feedback, and regression tests on real recorded maps, all without a simulator."
     )
 
     # --- SECTION VIII: PRACTICAL LESSONS ---
@@ -637,7 +725,13 @@ def create_report():
         "4) In-Process OctoMap Subtree Purging: The PyPI octomap binding defaults deleteNode(coord) to depth=1, deleting major branch nodes and wiping out "
         "accumulated map memory. Enforcing depth=0 resolved the defect.\n"
         "5) Nav2 Velocity Smoother Topic Collision: Installed nav2_bringup remaps smoothed velocity directly to unnamespaced /cmd_vel, colliding with the UAV's "
-        "flight controller. Implementing a targeted SetRemap inside launch files isolated ground and aerial twist channels."
+        "flight controller. Implementing a targeted SetRemap inside launch files isolated ground and aerial twist channels.\n"
+        "6) Failed Plans Overwrote Tentative-Plan Flags: the planner node published plan_has_frontier/anomaly = False for a request that found no path; the "
+        "follower read that as 'plan is now confirmed' and stopped periodic replanning, a stall of about 45 s. Flags are now published only for valid plans.\n"
+        "7) Thin Walls Are Unobserved, Not Lethal: a 0.15 m wall is one or two cells wide, so unscanned wall tops look like passages. Fixed with a local "
+        "inscribed-disc width test on frontier cells.\n"
+        "8) Diagnosing from the wrong evidence: an early conclusion that failed A* runs were not a planner problem was wrong; replaying PRM and A* on the same "
+        "late snapshots showed A* returning no path where PRM crossed. Offline replay on recorded maps, with regression tests, is now the first diagnostic step."
     )
 
     # --- SECTION IX: CONCLUSION ---
@@ -646,8 +740,13 @@ def create_report():
         "We have presented TerraLink, an open, modular ROS 2 Humble framework for heterogeneous UAV-UGV collaborative navigation in unstructured and "
         "occluded environments. By decoupling global 2.5D elevation planning from local bounded 3D volumetric verification, TerraLink resolves the classical "
         "overhang occlusion failure mode without incurring the computational or memory penalties of global 3D grids. Version 3 anomaly detection and "
-        "bidirectional region caching guarantee efficient, oscillation-free transit through covered corridors. Future milestones will integrate "
-        "Direction 2 semantic vision (YOLOv8-seg/SAM 2.1) to classify terrain material properties and deploy the framework onto physical mobile manipulators."
+        "bidirectional region caching guarantee efficient, oscillation-free transit through covered corridors. An opt-in deterministic A* planner with explicit uncertain-cell classes, route memory and an offline replay workflow "
+        "reduced time and distance from first movement in the tunnel world, but all evidence is simulation, one main world and a small number of runs. Compared "
+        "with published systems we are at best on par at the concept level for UAV-assisted ground navigation and clearly behind on exploration (TARE, FUEL, "
+        "GBPlanner), on path execution (Nav2 Regulated Pure Pursuit instead of per-waypoint DWB goals), and on real-robot validation. Planned work: validate "
+        "A* on the maze and construction-site maps, adopt continuous path following, fix the anomaly detector at the source, profile and reduce compute "
+        "(replan only on change, lazy search passes, an adaptive UAV scan), and then integrate Direction 2 semantic vision "
+        "(YOLOv8-seg/SAM 2.1) and deploy the framework onto physical robots."
     )
 
     # --- REFERENCES ---
@@ -662,7 +761,12 @@ def create_report():
         "[7] N. Koenig and A. Howard, 'Design and use paradigms for Gazebo, an open-source multi-robot simulator,' in Proc. IEEE/RSJ Int. Conf. Intelligent Robots and Systems (IROS), 2004, pp. 2149–2154.",
         "[8] J. Redmon and A. Farhadi, 'YOLOv3: An incremental improvement,' arXiv preprint arXiv:1804.02767, 2018.",
         "[9] A. Kirillov et al., 'Segment Anything,' in Proc. IEEE/CVF Int. Conf. Computer Vision (ICCV), 2023, pp. 4015–4026.",
-        "[10] T. M. Howard, C. J. Green, and A. Kelly, 'State space sampling of feasible motions for high-performance mobile robot navigation in complex terrain,' J. Field Robot., vol. 25, no. 6-7, pp. 325–345, 2008."
+        "[10] T. M. Howard, C. J. Green, and A. Kelly, 'State space sampling of feasible motions for high-performance mobile robot navigation in complex terrain,' J. Field Robot., vol. 25, no. 6-7, pp. 325–345, 2008.",
+        "[11] P. E. Hart, N. J. Nilsson, and B. Raphael, 'A formal basis for the heuristic determination of minimum cost paths,' IEEE Trans. Syst. Sci. Cybern., vol. 4, no. 2, pp. 100–107, 1968.",
+        "[12] T. Miki, L. Wellhausen, R. Grandia, F. Jenelten, T. Homberger, and M. Hutter, 'Elevation mapping for locomotion and navigation using GPU,' arXiv:2204.12876, 2022.",
+        "[13] S. Macenski, S. Singh, F. Martín, and J. Ginés, 'Regulated pure pursuit for robot path tracking,' arXiv:2305.20026, 2023.",
+        "[14] C. Cao, H. Zhu, H. Choset, and J. Zhang, 'TARE: A hierarchical framework for efficiently exploring complex 3D environments,' in Robotics: Science and Systems (RSS), 2021.",
+        "[15] B. Zhou, Y. Zhang, X. Chen, and S. Shen, 'FUEL: Fast UAV exploration using incremental frontier structure and hierarchical planning,' arXiv:2010.11561, 2020."
     ]
     for r in refs:
         p_ref = doc.add_paragraph()
