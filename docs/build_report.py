@@ -217,8 +217,8 @@ def create_report():
         "octree (BoundedVoxelMap) with radial spatial eviction (12m radius). Verified headroom verdicts are persistently retained in a bidirectional "
         "memory loop (ResolvedRegionStore) to eliminate query oscillations. A deterministic, opt-in A* grid planner with explicit free/blocked/uncertain cell "
         "classes, route memory and a replay-based test workflow was added as a second global planner; in the tunnel world it reached the goal about 16 s after "
-        "first movement versus about 28 s for PRM (three runs each, simulation only, one world). The system has been validated across 412 automated unit tests "
-        "(368 nav, 44 emap) and simulation benchmarks in Ignition Fortress. The UGV autonomously negotiates an occluded tunnel corridor with zero operator "
+        "first movement versus about 28 s for PRM (three runs each, simulation only, tunnel world only here; the maze is covered in Section VII-C). The system has been validated across 426 automated unit tests "
+        "(382 nav, 44 emap) and simulation benchmarks in Ignition Fortress. The UGV autonomously negotiates an occluded tunnel corridor with zero operator "
         "intervention. Furthermore, we document the critical physical, simulation, and coordination defects encountered during "
         "development and provide the exact mathematical and algorithmic solutions that ensured end-to-end stability."
     )
@@ -691,6 +691,17 @@ def create_report():
         bold_prefix="Reading: "
     )
     add_p(
+        "Step 08 added path-trace images and a second world. With the same logging (true UGV pose from the simulator and every plan the planner returned), "
+        "three full runs per planner were recorded in tunnel_test.world and in room_maze.world (12 runs, UAV scan included). In the maze A* followed the same route "
+        "in all three runs (17-18 s from first movement, 6.3-6.4 m, no stalls) while PRM reached the goal in two of three (one run stalled for 81 s; in the third "
+        "its only plan crossed a wall and the UGV circled in front of it for about five minutes). In the tunnel PRM reached the goal in all three runs but slowly "
+        "(63-242 s from first movement, 29-192 s stalled), while A* arrived in two of three runs in 17-31 s with no stalls and failed once, stuck at a thin wall seam "
+        "south of the tunnel. The images are in media/figures/path_comparison/. Three runs per cell in simulation show behaviour, not statistics. The same work "
+        "uncovered and fixed three defects: a launch argument that crashed the planner node (an integer where a double was expected), and a maze world and launch file "
+        "that had not worked since the ground-truth odometry change (a missing transform source, then the spawn offset applied twice).",
+        bold_prefix="Path traces in two worlds: "
+    )
+    add_p(
         "Measured on the saved 160x160 tunnel map (0.1 m cells, single CPU thread), one A* plan takes about 64 ms, mask construction 3.5 ms, and one PRM plan "
         "about 1.05 s. Three grid searches per plan account for about two thirds of the A* time. Mapping, voxel-map and Nav2 costs were not re-profiled for "
         "this table.",
@@ -700,7 +711,7 @@ def create_report():
     add_subsec_head("D. Test Suite Verification")
     add_p(
         "To enforce architectural integrity without simulator overhead, the repository contains 25 test files spanning tests/emap and tests/nav "
-        "(19 nav, 6 emap). The 368 nav tests run in about 43 s and the 44 CPU emap tests in under 1 s (the GPU fusion test is skipped and the emap folder "
+        "(20 nav, 6 emap). The 382 nav tests run in under a minute and the 44 CPU emap tests in under 1 s (the GPU fusion test is skipped and the emap folder "
         "must be run file by file in this environment because a cupy import fails against the installed numpy). They cover coordinate math, Bayesian fusion "
         "invariants, Mahalanobis rejection, Bresenham and supercover rasterization, OctoMap eviction, Dijkstra cost weights, A* optimality and completeness "
         "cases, route memory, exploration, stuck feedback, and regression tests on real recorded maps, all without a simulator."

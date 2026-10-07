@@ -811,8 +811,29 @@
         <wheel_radius>0.05</wheel_radius>
         <topic>cmd_vel</topic>
         <odom_topic>odometry</odom_topic>
-        <frame_id>nav_ugv/odom</frame_id>
-        <child_frame_id>nav_ugv/base_link</child_frame_id>
+        <!-- Same fix tunnel_test.world already has (step 06): the DiffDrive
+             plugin's own odom is dead-reckoned from wheel rotation, so it goes
+             to a dedicated, unused frame pair, and the REAL nav_ugv/odom ->
+             nav_ugv/base_link transform (the one config/bridge.yaml bridges
+             from `/model/nav_ugv/pose` to /tf, and Nav2's costmaps need) comes
+             from the OdometryPublisher below. FOUND 2026-10-08 while recording
+             maze runs: this world never got that fix, so with the current
+             bridge.yaml Nav2 never saw nav_ugv/odom -> nav_ugv/base_link
+             ("Timed out waiting for transform ...") and nav_ugv never moved. -->
+        <frame_id>nav_ugv/wheel_odom</frame_id>
+        <child_frame_id>nav_ugv/wheel_odom_base</child_frame_id>
+        <odom_publish_frequency>30</odom_publish_frequency>
+      </plugin>
+
+      <!-- Ground-truth odom/TF. NOTE: in this world it reports the pose in WORLD
+           coordinates (measured live: base_link at (-0.7,-4.5) in nav_ugv/odom),
+           so launch/nav_sim.launch.py's ugv_odom_static_tf (iris_quad/odom ->
+           nav_ugv/odom) is the identity, exactly like tunnel_demo.launch.py's. -->
+      <plugin filename="ignition-gazebo-odometry-publisher-system"
+        name="gz::sim::systems::OdometryPublisher">
+        <dimensions>2</dimensions>
+        <odom_frame>nav_ugv/odom</odom_frame>
+        <robot_base_frame>nav_ugv/base_link</robot_base_frame>
         <odom_publish_frequency>30</odom_publish_frequency>
       </plugin>
     </include>

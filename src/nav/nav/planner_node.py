@@ -20,6 +20,7 @@ later"; the map itself is the thing that's kept ready.
 """
 from __future__ import annotations
 
+import json
 import time
 
 import numpy as np
@@ -30,7 +31,7 @@ from grid_map_msgs.msg import GridMap
 from nav_msgs.msg import Path
 from nav_msgs.srv import GetPlan
 from geometry_msgs.msg import PoseStamped
-from std_msgs.msg import Bool, Float64MultiArray
+from std_msgs.msg import Bool, Float64MultiArray, String
 
 from emap.utils.gridmap_utils import decode_gridmap, encode_layer_to_multiarray
 from nav import astar_planner
@@ -277,6 +278,13 @@ class PlannerNode(Node):
         # whether the plan is tentative at all.
         self._anomaly_plan_pub = self.create_publisher(Bool, "plan_has_anomaly", 10)
 
+        # Debug/analysis side channel (used by scripts/trace_run.py to draw
+        # every plan the planner hands out): one JSON string per get_plan
+        # request - valid or not - with the waypoints and what kind of ground
+        # each stretch crosses. It changes nothing about planning; nobody in
+        # the stack subscribes to it.
+        self._plan_trace_pub = self.create_publisher(String, "plan_trace", 10)
+
         self.get_logger().info(f"planner_node: waiting for a map on {map_topic}...")
 
     def _map_callback(self, msg: GridMap) -> None:
@@ -419,6 +427,25 @@ class PlannerNode(Node):
             self._last_logged_note = note
         return result
 
+    def _publish_plan_trace(self, start_xy, goal_xy, result) -> None:
+        """One JSON line per plan response, for offline drawing (see
+        `plan_trace` publisher above). `kinds[i]` describes the stretch from
+        waypoint i to i+1 ("free", "anomaly", "frontier"); the PRM planner
+        does not report per-stretch kinds, so for it `kinds` is empty and the
+        two plan-level flags are all there is."""
+        record = {
+            "planner": self._planner_type,
+            "valid": bool(result.valid),
+            "start": [float(start_xy[0]), float(start_xy[1])],
+            "goal": [float(goal_xy[0]), float(goal_xy[1])],
+            "waypoints": [[float(x), float(y)] for x, y in result.waypoints],
+            "kinds": list(getattr(result, "segment_kinds", [])),
+            "has_frontier": bool(result.has_frontier_segments),
+            "has_anomaly": bool(result.has_anomaly_segments),
+            "exploration": getattr(result, "exploration_kind", "") if getattr(result, "is_exploration", False) else "",
+        }
+        self._plan_trace_pub.publish(String(data=json.dumps(record)))
+
     def _get_plan_callback(self, request: GetPlan.Request, response: GetPlan.Response) -> GetPlan.Response:
         if self._walkable_mask is None:
             self.get_logger().warn("get_plan requested before any /elevation_map message arrived - rejecting.")
@@ -459,6 +486,8 @@ class PlannerNode(Node):
         if result.valid:
             self._frontier_pub.publish(Bool(data=result.has_frontier_segments))
             self._anomaly_plan_pub.publish(Bool(data=result.has_anomaly_segments))
+
+        self._publish_plan_trace(start_xy, goal_xy, result)
 
         response.plan = Path()
         response.plan.header.frame_id = self._map_frame

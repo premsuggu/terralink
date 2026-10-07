@@ -12,6 +12,16 @@ starting in room A, crossing the tunnel, and settling at the goal in room
 B. See `../step06_hybrid_3d_voxel_navigation.md` for the full technical
 history behind this scenario.
 
+## Path-comparison images (located in `media/figures/path_comparison/`)
+
+How the UGV really moved and which plans it received, PRM vs A*, in both worlds (12 live runs, 3 per planner per world, full runs including the UAV scan). Made with `scripts/trace_run.py` + `scripts/render_run_trace.py`; full explanation, legend, result tables and the bugs found along the way are in `../step08_path_trace_images.md`.
+
+- **`tunnel_prm_vs_astar.png`**, **`maze_prm_vs_astar.png`** - planners side by side, 3 runs overlaid per planner, per-run numbers underneath.
+- **`runs/<world>_<planner>_run<N>.png`** - one run in detail: track coloured by time since first movement, every distinct plan numbered where the UGV asked for it (orange dashed = tentative stretch, purple dashed = exploration detour), pauses as red rings, 3D clearance checks as green crosses.
+- **`data/<world>_<planner>_<N>/`** - `trace.json` + `map.npz` for each run, so any image can be redrawn; `tunnel_metrics.json` / `maze_metrics.json` hold the numbers.
+
+Headline (simulation, small n): maze - A* identical 3 of 3 (17-18 s from first move), PRM 2 of 3 reached; tunnel - PRM 3 of 3 but slow, A* 2 of 3 fast with one failure at a thin wall seam.
+
 ## Videos (located in `media/videos/`)
 
 - **`overhead_view_prm.mp4`** *(PRM planner; renamed from `overhead_view.mp4`)* - full-room top-down bird's-eye view captured from a high static ceiling camera (`0 0 7.65m`, pitched straight down - reframed, see "Third pass" below). Shows the entire environment: Room A, the divider wall, the tunnel in the center, and Room B, with the UAV flying overhead and the UGV crossing through the tunnel from start to goal.

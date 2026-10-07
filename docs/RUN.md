@@ -53,11 +53,21 @@ python3 src/nav/scripts/replay_plan.py --snapshot tests/nav/fixtures/tunnel_test
 python3 src/nav/scripts/replay_plan.py ... --planner prm      # the PRM planner on the same map
 ```
 
+### Record and draw a run (where did the UGV go, which plans did it get)
+
+```bash
+# with a simulation running in another terminal:
+python3 src/nav/scripts/trace_run.py --out-dir runs/tunnel_astar_1 --world tunnel_test --goal 3 0 --planner astar   # maze: --world room_maze --goal 1.7 -0.5
+python3 src/nav/scripts/render_run_trace.py detail --run runs/tunnel_astar_1 --out run.png
+python3 src/nav/scripts/render_run_trace.py compare --group "PRM=runs/p1,runs/p2" --group "A*=runs/a1,runs/a2" --out cmp.png
+```
+Images from the 12 runs of step 08 are in `media/figures/path_comparison/`; details in `docs/work-docs/nav/step08_path_trace_images.md`.
+
 ## Tests
 
 ```bash
 source /opt/ros/humble/setup.bash
-(cd tests/nav && python3 -m pytest -q)                          # 368 tests
+(cd tests/nav && python3 -m pytest -q)                          # 382 tests
 cd tests/emap && for f in test_*.py; do python3 -m pytest -q $f; done   # 44 CPU tests; run file by file
 ```
 Running `tests/emap` as one folder collects as "skipped" here because the GPU test module's cupy import fails against the installed numpy.

@@ -76,6 +76,7 @@ from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import EnvironmentVariable, LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node, SetRemap
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
@@ -355,10 +356,12 @@ def generate_launch_description():
             'enable_anomaly_mode': True,
             'planner_type': LaunchConfiguration('planner_type'),
             'enable_exploration': LaunchConfiguration('enable_exploration'),
-            'anomaly_hold_sec': LaunchConfiguration('anomaly_hold_sec'),
+            # ParameterValue(value_type=float): `anomaly_hold_sec:=30` would otherwise reach
+            # the node as an INTEGER and be rejected (it declares a double), killing planner_node.
+            'anomaly_hold_sec': ParameterValue(LaunchConfiguration('anomaly_hold_sec'), value_type=float),
             'wait_for_mapping': LaunchConfiguration('wait_for_mapping'),
             'stuck_feedback': LaunchConfiguration('stuck_feedback'),
-            'frontier_min_width_m': LaunchConfiguration('frontier_min_width_m'),
+            'frontier_min_width_m': ParameterValue(LaunchConfiguration('frontier_min_width_m'), value_type=float),
         }],
         output='screen',
     )

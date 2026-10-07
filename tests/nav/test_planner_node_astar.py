@@ -67,6 +67,8 @@ def _make_node(*params):
     node.published = {"frontier": [], "anomaly": []}
     node._frontier_pub.publish = lambda m: node.published["frontier"].append(m.data)
     node._anomaly_plan_pub.publish = lambda m: node.published["anomaly"].append(m.data)
+    node.published["trace"] = []
+    node._plan_trace_pub.publish = lambda m: node.published["trace"].append(m.data)
     return node
 
 
@@ -405,3 +407,49 @@ class TestFrontierMinWidthDefault:
         resp = node._get_plan_callback(_request(_xy(30, 5), _xy(30, 55)), GetPlan.Response())
         assert resp.plan.poses
         assert node.published["frontier"][-1] is True
+
+
+class TestPlanTraceTopic:
+    """`plan_trace` is the debug side channel scripts/trace_run.py records to draw
+    every plan; it must describe each reply faithfully and change nothing else."""
+
+    def test_a_valid_plan_is_published_with_waypoints_and_kinds(self, node_factory):
+        import json
+
+        node = node_factory("planner_type:=astar")
+        node._map_callback(_gridmap(_open_map()))
+        resp = node._get_plan_callback(_request(_xy(10, 10), _xy(45, 40)), GetPlan.Response())
+        rec = json.loads(node.published["trace"][-1])
+        assert rec["valid"] is True and rec["planner"] == "astar"
+        assert len(rec["waypoints"]) == len(resp.plan.poses) == 2
+        assert rec["kinds"] == ["free"]
+        assert rec["has_frontier"] is False and rec["has_anomaly"] is False and rec["exploration"] == ""
+
+    def test_a_no_path_reply_is_published_too(self, node_factory):
+        import json
+
+        node = node_factory("planner_type:=astar")
+        w = _open_map()
+        w[:, 30] = False
+        node._map_callback(_gridmap(w))
+        node._get_plan_callback(_request(_xy(10, 10), _xy(10, 50)), GetPlan.Response())
+        rec = json.loads(node.published["trace"][-1])
+        assert rec["valid"] is False and rec["waypoints"] == []
+        # the request is recorded so a drawing can show where the UGV asked from
+        assert rec["start"] == pytest.approx(list(_xy(10, 10)))
+
+    def test_prm_plans_are_published_without_per_stretch_kinds(self, node_factory):
+        import json
+
+        node = node_factory()
+        node._map_callback(_gridmap(_open_map()))
+        node._get_plan_callback(_request(_xy(10, 10), _xy(45, 40)), GetPlan.Response())
+        rec = json.loads(node.published["trace"][-1])
+        assert rec["planner"] == "prm" and rec["valid"] is True and rec["kinds"] == []
+
+    def test_the_trace_does_not_alter_the_plan_itself(self, node_factory):
+        node = node_factory("planner_type:=astar")
+        node._map_callback(_gridmap(_open_map()))
+        a = _poses(node._get_plan_callback(_request(_xy(10, 10), _xy(45, 40)), GetPlan.Response()))
+        b = _poses(node._get_plan_callback(_request(_xy(10, 10), _xy(45, 40)), GetPlan.Response()))
+        assert a == b and len(node.published["trace"]) == 2

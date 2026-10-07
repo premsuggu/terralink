@@ -165,7 +165,12 @@ def generate_launch_description():
         executable='static_transform_publisher',
         name='ugv_odom_static_tf',
         arguments=[
-            '--x', '-0.7', '--y', '-4.5', '--z', '0.0',
+            # Identity, like tunnel_demo.launch.py: nav_ugv/odom -> base_link now comes
+            # from room_maze.world's OdometryPublisher, which reports the pose in WORLD
+            # coordinates already (measured live 2026-10-08: base_link at (-0.7,-4.5) in
+            # nav_ugv/odom). The old spawn offset (-0.7, -4.5) belonged to the dead-
+            # reckoned DiffDrive odometry and would now be applied twice.
+            '--x', '0.0', '--y', '0.0', '--z', '0.0',
             '--frame-id', 'iris_quad/odom',
             '--child-frame-id', 'nav_ugv/odom',
         ],

@@ -36,7 +36,7 @@ Plain reading: our *planning decisions* are competitive for the narrow case we b
 
 | # | Item | Why it matters | Size |
 |---|---|---|---|
-| 1 | Run A* on `room_maze` and the construction-site map via snapshots | We have **one world, one goal**; thin-strip pruning (0.44 m) is untested on other wall thicknesses | small (offline replay makes it cheap) |
+| 1 | ~~Run A* on `room_maze`~~ **done in step 08** (live, 3 runs: 3/3 reached; also 3 more tunnel runs: 2/3). Still open: the construction-site map. Also fix the tunnel failure (thin wall seam) | We have **one world, one goal**; thin-strip pruning (0.44 m) is untested on other wall thicknesses | small (offline replay makes it cheap) |
 | 2 | Replace DWB one-goal-per-waypoint with continuous `FollowPath` + Regulated Pure Pursuit, tunnel-sized inflation (`docs/resource/05` phases 1 and 3) | Biggest remaining lever on useless motion; likely fixes the E2 docking stall (stopped 0.306 m from goal) | medium |
 | 3 | Fix the anomaly detector (accumulate over time) instead of masking flicker with `anomaly_hold_sec` | Root cause, not a workaround | medium |
 | 4 | Decide defaults (`planner_type`, `wait_for_mapping`) after more samples | Currently PRM default; n = 1-2 in full mode | decision |

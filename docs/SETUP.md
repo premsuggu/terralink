@@ -74,7 +74,7 @@ echo 'export FASTDDS_BUILTIN_TRANSPORTS=UDPv4' >> ~/.bashrc    # helps DDS disco
 
 ```bash
 colcon list                                     # should list exactly: emap, nav
-(cd tests/nav && python3 -m pytest -q)          # 368 tests, needs ROS sourced for the node tests
+(cd tests/nav && python3 -m pytest -q)          # 382 tests, needs ROS sourced for the node tests
 for f in tests/emap/test_*.py; do python3 -m pytest -q $f; done   # run file by file (see RUN.md)
 ```
 

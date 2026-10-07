@@ -119,7 +119,7 @@ Six runs and one PRM baseline, before the clearance waiver, frontier pruning and
 ### 5.4 What is and is not proven
 * Proven (n=3, clean mode): A* + pruning beats PRM on time-from-first-move, distance and stalls on this map; A* without pruning fails.
 * Reasonably shown (n=1–2, full mode): `wait_for_mapping` gives the same clean behaviour with the scan included.
-* **Not proven:** other worlds/goals (one world, one goal here); that `anomaly_hold_sec`, exploration or stuck feedback help (hold/wait were run together; neither exploration nor stuck feedback showed a benefit); robustness of the 0.44 m pruning width on other wall thicknesses. E2's stop 6 mm outside the arrival threshold shows the goal-docking edge (Nav2's DWB near the goal) is still a loose end.
+* **Not proven:** other worlds/goals (one world, one goal here; **update:** step 08 adds 3 maze runs - A* reached the goal 3 of 3 - and 3 more full-run tunnel runs, of which A* arrived in 2 and failed once, see `step08_path_trace_images.md`); that `anomaly_hold_sec`, exploration or stuck feedback help (hold/wait were run together; neither exploration nor stuck feedback showed a benefit); robustness of the 0.44 m pruning width on other wall thicknesses. E2's stop 6 mm outside the arrival threshold shows the goal-docking edge (Nav2's DWB near the goal) is still a loose end.
 
 ## 6. Files
 | New / edited | Purpose | Tests |
