@@ -1,5 +1,7 @@
 # Step 7: Traversability + Visualization
 
+> **Note (2026-10-07):** `src/d1` / `src/d3` (cited below) were removed from the working tree; they are in git history (`git show 8a86dab:<path>`).
+
 **Package**: `src/emap/`
 **Goal**: Compute a real, explainable traversability score from the map's own elevation/variance data, build an actual non-flat test terrain to prove it works, and visualize the result.
 **Status**: ✅ Complete and verified - including flying directly over a real bump and reading back both the bump's true peak height and correctly-differentiated traversability.

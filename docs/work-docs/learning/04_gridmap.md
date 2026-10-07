@@ -1,5 +1,7 @@
 # GridMap Library
 
+> **Note (2026-10-07):** this tutorial was written early in the project. Paths such as `src/d1`, `src/d3` and `terralink_elevation` refer to reference code that has since been removed (last present in commit `8a86dab`). The code that exists now is `src/emap` and `src/nav`; see `docs/SETUP.md` / `docs/RUN.md` for current commands. The concepts below still apply.
+
 **Goal**: Understand GridMap message format and ROS 2 integration.  
 **Time to Read**: ~20 minutes  
 **Prerequisites**: [01_ros2_fundamentals.md](01_ros2_fundamentals.md), [02_python_robotics.md](02_python_robotics.md)

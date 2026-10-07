@@ -1,5 +1,7 @@
 # Step 4: Bayesian Fusion (CPU)
 
+> **Note (2026-10-07):** `src/d1` / `src/d3` (cited below) were removed from the working tree; they are in git history (`git show 8a86dab:<path>`).
+
 **Package**: `src/emap/`
 **Goal**: Teach the elevation map (step 3) to actually learn terrain height from a batch of 3D points, by combining each new measurement with what the cell already believes — not simply overwriting it — and reject measurements that are too inconsistent to trust.
 **Status**: ✅ Complete and verified.

@@ -41,7 +41,7 @@ class ElevationMap:
 
     All four layers are stored together as ONE NumPy array of shape
     `(NUM_LAYERS, cell_n, cell_n)` rather than four separate arrays. This
-    matches the reference implementation in `src/d1` and is deliberate: later
+    matches the reference implementation in `src/d1 (since removed; last present in commit 8a86dab) (since removed from the tree; last present in commit 8a86dab)` and is deliberate: later
     steps need to shift the whole map (as the UAV flies) or move it to the
     GPU, and doing that once to a single stacked array is simpler and faster
     than repeating the same operation four times on four separate arrays.

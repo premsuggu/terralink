@@ -1,6 +1,6 @@
 """Turn `emap`'s published `traversability`/`is_valid` layers into a single
 boolean "can a UGV drive here" mask - the one thing this whole package
-replaces from `src/d3/my_bot`, which answered this question with a hardcoded
+replaces from `src/d3 (since removed; last present in commit 8a86dab)/my_bot`, which answered this question with a hardcoded
 BGR color-range threshold on a live top-down camera image
 (`waypoints_server.cpp::process_image`: `cv::inRange(cv_image, (100,100,100),
 (180,180,180))`), tuned to one specific world's floor-gray rendering.

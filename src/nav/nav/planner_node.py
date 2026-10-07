@@ -1,7 +1,7 @@
 """nav's ROS node: turns the live `/elevation_map` into a walkable mask
 (`nav.walkability`) and answers path-planning requests over it
 (`nav.prm_planner`) via the standard `nav_msgs/srv/GetPlan` service - the
-direct replacement for `src/d3/my_bot/src/waypoints_server.cpp`
+direct replacement for `src/d3 (since removed; last present in commit 8a86dab)/my_bot/src/waypoints_server.cpp`
 (`waypoints_service`, a custom `tutorial_interfaces/srv/GetWaypoints`).
 `GetPlan` was used instead of vendoring that custom interface: it already
 has exactly the shape this needs (`start`/`goal` PoseStamped in, a

@@ -1,5 +1,7 @@
 # Step 3: Elevation Map Core Data Structure (CPU)
 
+> **Note (2026-10-07):** `src/d1` / `src/d3` (cited below) were removed from the working tree; they are in git history (`git show 8a86dab:<path>`).
+
 **Package**: `src/emap/`
 **Goal**: Build the elevation map's actual grid data structure — the thing step 4 onward will fill in with real sensor measurements — as plain, fast, well-tested NumPy code with no ROS or Gazebo involved at all.
 **Status**: ✅ Complete and verified.

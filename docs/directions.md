@@ -2,6 +2,8 @@
 
 To successfully route a UGV using a UAV's overhead perspective, we must translate raw sensor data into a mathematical grid that the UGV's navigation stack can interpret. We are evaluating three primary architectural directions for this perception pipeline:
 
+> **Status note (2026-10-07).** This file records the three approaches that were evaluated at the start. The outcome: **Direction 1 (geometric)** became our own from-scratch package `emap` (`src/emap/`) plus the `nav` package; **Direction 3 (OpenCV baseline)** was only a stepping stone - its PRM idea was ported into `nav/prm_planner.py` and the reference code has been deleted; **Direction 2 (semantic)** has not been started (planned package name `terralink_semantic`). The reference copies of the Direction 1 and 3 code (`src/d1`, `src/d3`) were removed from the working tree; the last commit that contains them is `8a86dab` (`git show 8a86dab:src/d3/...`).
+
 ## Direction 1: The Geometric Approach (2.5D Elevation Mapping)
 Instead of relying on color, this approach maps the physical height of the terrain. 
 * **Mechanism:** The UAV utilizes a downward-facing RGB-D (Depth) Camera or 3D LiDAR. It projects a grid over the terrain and assigns a specific height value (Z-axis) to each cell.

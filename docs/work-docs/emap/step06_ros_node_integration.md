@@ -1,5 +1,7 @@
 # Step 6: ROS 2 Node Integration
 
+> **Note (2026-10-07):** `src/d1` / `src/d3` (cited below) were removed from the working tree; they are in git history (`git show 8a86dab:<path>`).
+
 **Package**: `src/emap/`
 **Goal**: Wire steps 2-5 together into one live ROS 2 node - subscribe to the real point cloud, fuse it into a real `ElevationMap`, and publish the result as a `grid_map_msgs/GridMap`.
 **Status**: ✅ Complete and verified - and this is the step where the whole pipeline (steps 1 through 6) was proven correct end to end for the first time, not just piece by piece.

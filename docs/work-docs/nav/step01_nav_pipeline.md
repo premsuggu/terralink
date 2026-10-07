@@ -1,5 +1,7 @@
 # Step 1: UAV-mapped elevation → walkable classification → PRM path → UGV follows
 
+> **Note (2026-10-07):** `src/d1` / `src/d3` (cited below) were removed from the working tree; they are in git history (`git show 8a86dab:<path>`).
+
 **Package**: `src/nav/`
 **Goal**: replace `src/d3/my_bot`'s hardcoded pixel-color walkability classification with `emap`'s own traversability layer, keeping d3's proven PRM planning and Nav2-based low-level following otherwise.
 **Status**: mapping → classification → planning is built, live-verified end to end (a real PRM path was returned from a live-flown map). The final low-level following stage (Nav2/DWB → `/cmd_vel_smoothed` → UGV motion) is wired but not yet live-verified - Nav2 isn't installed in this environment and the install is pending on the user (see below).

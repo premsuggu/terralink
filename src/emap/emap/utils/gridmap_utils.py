@@ -13,7 +13,7 @@ scrambled version of the real map - a mistake that's easy to make and easy to
 miss until you're staring at a garbled RViz display wondering why the numbers
 were right in Python but wrong on screen.
 
-Reference (format only, our own code): `src/d1/elevation_mapping_gpu_ros2/
+Reference (format only, our own code): `src/d1 (since removed; last present in commit 8a86dab)/elevation_mapping_gpu_ros2/
 .../elevation_mapping_cupy/gridmap_utils.py` (`encode_layer_to_multiarray`).
 """
 from __future__ import annotations

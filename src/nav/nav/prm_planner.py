@@ -1,5 +1,5 @@
 """Probabilistic Roadmap (PRM) path planner - a NumPy/SciPy port of
-`src/d3/my_bot/includes/processImage.cpp`'s `GridSpace` class, kept as the
+`src/d3 (since removed; last present in commit 8a86dab)/my_bot/includes/processImage.cpp`'s `GridSpace` class, kept as the
 same algorithm on purpose (random sampling restricted to free space, a
 line-of-sight check to connect nearby samples, shortest-path search over the
 resulting graph) rather than reinvented, per the project's instruction to

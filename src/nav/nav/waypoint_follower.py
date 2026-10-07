@@ -1,6 +1,6 @@
 """nav's ROS node: requests a path from `planner_node`'s `get_plan` service
 and walks the UGV through it - a Python port of
-`src/d3/my_bot/src/waypoints_client.cpp`'s exact logic (same algorithm,
+`src/d3 (since removed; last present in commit 8a86dab)/my_bot/src/waypoints_client.cpp`'s exact logic (same algorithm,
 reused as instructed, only the service interface changed from d3's custom
 `GetWaypoints.srv` to the standard `nav_msgs/srv/GetPlan`):
 

@@ -1,4 +1,4 @@
-# nav2 parameters for nav_ugv - adapted from src/d3/my_bot/config/nav2_params.yaml
+# nav2 parameters for nav_ugv - adapted from src/d3 (since removed; last present in commit 8a86dab)/my_bot/config/nav2_params.yaml
 # (same DWB/costmap tuning values, already proven there) with three real
 # changes, all frame-related and all confirmed by actually launching
 # worlds/room_maze.world and inspecting live TF/odometry rather than assumed:

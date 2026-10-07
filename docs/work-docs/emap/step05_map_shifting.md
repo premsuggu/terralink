@@ -1,5 +1,7 @@
 # Step 5: Map Shifting (UAV-Centric)
 
+> **Note (2026-10-07):** `src/d1` / `src/d3` (cited below) were removed from the working tree; they are in git history (`git show 8a86dab:<path>`).
+
 **Package**: `src/emap/`
 **Goal**: Let the fixed-size elevation map re-center itself on the UAV as it flies, instead of staying fixed at the origin forever, without corrupting any data that's still within view or mislabeling which edge is genuinely new.
 **Status**: ✅ Complete and verified.

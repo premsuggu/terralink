@@ -1,5 +1,7 @@
 # Colcon Build System
 
+> **Note (2026-10-07):** this tutorial was written early in the project. Paths such as `src/d1`, `src/d3` and `terralink_elevation` refer to reference code that has since been removed (last present in commit `8a86dab`). The code that exists now is `src/emap` and `src/nav`; see `docs/SETUP.md` / `docs/RUN.md` for current commands. The concepts below still apply.
+
 **Goal**: Build ROS 2 packages with colcon (the standard build tool).  
 **Time to Read**: ~15 minutes  
 **Prerequisites**: [01_ros2_fundamentals.md](01_ros2_fundamentals.md)
@@ -21,10 +23,8 @@ Colcon is the **standard build tool for ROS 2**. It:
 ```
 terralink/                 # Workspace root
 ├── src/                   # Source packages (git repos, your code)
-│   ├── terralink_elevation/
-│   ├── d1/
-│   ├── d2/
-│   └── d3/
+│   ├── emap/
+│   └── nav/
 ├── build/                 # Build artifacts (intermediate)
 ├── install/               # Installed packages (source this!)
 ├── log/                   # Build logs
@@ -295,20 +295,13 @@ rosdep install --from-paths src --ignore-src -r -y
 ## 10. Our Build Commands
 
 ```bash
-# Build our package
+# Build our packages
 cd /home/prem/terralink
-colcon build --packages-select terralink_elevation --symlink-install
+colcon build --packages-select emap nav
 source install/local_setup.bash
 
-# Build reference (Direction 1) - separate
-colcon build --packages-select elevation_map_msgs elevation_mapping_cupy \
-    --cmake-args -DBUILD_TESTING=ON
-
-# Build baseline (Direction 3) - separate
-colcon build --packages-select my_bot tutorial_interfaces
-
-# Run tests
-colcon test --packages-select terralink_elevation --event-handlers console_direct+
+# Run tests (algorithm tests need no ROS: see docs/RUN.md)
+cd tests/nav && python3 -m pytest -q
 ```
 
 ---

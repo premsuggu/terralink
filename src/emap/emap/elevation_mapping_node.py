@@ -288,7 +288,7 @@ class ElevationMappingNode(Node):
         earlier (close enough for our purposes) has. Refusing to process a
         perfectly good point cloud just because of that would throw away
         real data for no benefit - this mirrors `safe_lookup_transform` in
-        the `src/d1` reference (`elevation_mapping_node.py`).
+        the `src/d1 (since removed; last present in commit 8a86dab)` reference (`elevation_mapping_node.py`).
         """
         try:
             return self._tf_buffer.lookup_transform(target_frame, source_frame, stamp)

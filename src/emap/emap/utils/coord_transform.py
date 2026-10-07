@@ -12,7 +12,7 @@ one point at a time in a Python for-loop would be far too slow. Calling these
 same functions once with a whole array is both simpler to write AND orders of
 magnitude faster.
 
-Grid convention (matches the reference implementations in src/d1 and
+Grid convention (matches the reference implementations in src/d1 (since removed; last present in commit 8a86dab) and
 src/terralink_elevation, re-derived and re-tested here rather than copied):
   - The grid is a square of `cell_n x cell_n` cells, each `resolution` meters
     across.

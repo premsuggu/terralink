@@ -108,7 +108,7 @@ Week 4 (Testing):
 - **CuPy Docs**: https://docs.cupy.dev/
 - **GridMap Docs**: https://github.com/ANYbotics/grid_map
 - **Gazebo ROS**: http://gazebosim.org/docs/latest/ros_wrappers
-- **This Project's Reference Code**: `src/d1/elevation_mapping_gpu_ros2/`
+- **This Project's Code**: `src/emap/` and `src/nav/` (the old `src/d1` reference was removed; last present in commit `8a86dab`)
 
 ---
 

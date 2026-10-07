@@ -1,7 +1,7 @@
 """Analytical traversability: turn the map's `elevation`/`variance` layers
 into a per-cell "how easy is this to drive over" score.
 
-This is an ORIGINAL design for this project, not adapted from `src/d1` -
+This is an ORIGINAL design for this project, not adapted from `src/d1 (since removed; last present in commit 8a86dab) (since removed from the tree; last present in commit 8a86dab)` -
 that reference computes traversability with a trained multi-scale CNN
 (`traversability_filter.py`: dilated 3x3 convolutions, weights loaded from a
 pickle file produced by an offline training run we have no access to). We

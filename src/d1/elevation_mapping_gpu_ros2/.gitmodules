@@ -1,3 +1,0 @@
-[submodule "plane_segmentation_ros2"]
-	path = plane_segmentation_ros2
-	url = https://github.com/zhengxiang94/plane_segmentation_ros2.git

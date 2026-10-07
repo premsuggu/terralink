@@ -9,7 +9,7 @@ per-voxel occupancy fusion via log-odds, ray casting so a "no return" beam
 correctly marks the space it passed through as free, and octree sparsity so
 empty/unknown regions don't cost memory) - this project's own precedent is
 "reuse a proven algorithm rather than reinvent it" (see `prm_planner.py`'s
-own docstring re: d3's PRM, or `emap`'s "reference `src/d1`, don't rebuild
+own docstring re: d3's PRM, or `emap`'s "reference `src/d1 (since removed; last present in commit 8a86dab)`, don't rebuild
 its ideas from scratch").
 
 REAL ENVIRONMENT CONSTRAINT FOUND LIVE while building this: the plan

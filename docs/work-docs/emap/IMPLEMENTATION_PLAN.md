@@ -1,5 +1,7 @@
 # emap: From-Scratch Elevation Mapping - Implementation Plan
 
+> **Note (2026-10-07):** the reference directories `src/d1` and `src/d3` were removed from the working tree (nothing built or ran against them). Older step docs below still cite their paths and line numbers as they were; recover any file with `git show 8a86dab:<path>`.
+
 **Status**: Active development line, having fully superseded the earlier `terralink_elevation` attempt (removed - see git history if ever needed).
 **Package**: `emap` (`src/emap/`)
 **Reference (read-only)**: `src/d1/elevation_mapping_gpu_ros2/` — stays untouched; consult for algorithms and lessons learned, never edit.

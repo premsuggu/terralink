@@ -15,7 +15,7 @@ explanation and worked examples.
 
 Reference (consulted, not copied): the per-point update formula and the
 outlier check below come from
-src/d1/elevation_mapping_gpu_ros2/.../kernels/custom_kernels.py
+src/d1 (since removed; last present in commit 8a86dab)/elevation_mapping_gpu_ros2/.../kernels/custom_kernels.py
 (`add_points_kernel`). That GPU kernel uses a two-buffer atomic-accumulate
 trick purely to avoid race conditions between many GPU threads writing to the
 same cell at once. A single-threaded CPU function has no such race, so this

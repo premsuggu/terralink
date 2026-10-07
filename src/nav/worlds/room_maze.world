@@ -2,7 +2,7 @@
 <!--
   nav step 1: the maze/room test world for the UAV-maps-then-UGV-navigates
   pipeline. Wall geometry ported (not literally copied - see below) from
-  src/d3/my_bot/worlds/roomWithObstacles.world's `room_with_walls_10x10`
+  src/d3 (since removed; last present in commit 8a86dab)/my_bot/worlds/roomWithObstacles.world's `room_with_walls_10x10`
   model, per the plan to reuse d3's own proven test environment rather than
   build a new one, since this milestone is about replacing d3's pixel-color
   walkability classification, not its geometry.

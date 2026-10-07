@@ -1,5 +1,0 @@
-geometry_msgs/Point start
-geometry_msgs/Point goal
----
-bool valid
-geometry_msgs/PoseStamped[] waypoints
