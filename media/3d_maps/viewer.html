@@ -230,7 +230,7 @@
       
       <div class="slider-group">
         <span>Point Size:</span>
-        <input type="range" id="size-slider" min="0.01" max="0.30" step="0.01" value="0.06">
+        <input type="range" id="size-slider" min="0.01" max="0.60" step="0.01" value="0.06">
         <span id="size-val">0.06m</span>
       </div>
 
@@ -317,7 +317,9 @@
     animate();
 
     // --- Fast Pure-JS ASCII PLY Parser ---
+    let pointSpacing = null;   // optional `comment point_spacing <m>` header line: sets a sensible default point size
     function parseAsciiPLY(text) {
+      pointSpacing = null;
       const lines = text.split('\n');
       let inHeader = true;
       let vertexCount = 0;
@@ -331,6 +333,7 @@
 
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i].trim();
+        if (line.startsWith('comment point_spacing')) { pointSpacing = parseFloat(line.split(/\s+/)[2]); continue; }
         if (!line || line.startsWith('comment')) continue;
 
         if (inHeader) {
@@ -397,6 +400,11 @@
       geometry.setAttribute('position', new THREE.BufferAttribute(parsed.positions, 3));
       geometry.setAttribute('color', new THREE.BufferAttribute(parsed.colors, 3));
 
+      if (pointSpacing) {      // files that declare their sampling spacing get a point size that closes the gaps
+        const sl = document.getElementById('size-slider');
+        sl.value = Math.min(parseFloat(sl.max), Math.max(parseFloat(sl.min), Math.round(pointSpacing * 100) / 100));
+        sl.dispatchEvent(new Event('input'));
+      }
       const pointSize = parseFloat(document.getElementById('size-slider').value);
       const material = new THREE.PointsMaterial({
         size: pointSize,

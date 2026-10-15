@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<sdf version="1.6">
+  <model name="site_box_white">
+    <static>true</static>
+    <link name="link">
+      <visual name="visual">
+        <geometry><mesh><uri>model://site_box_white/mesh.obj</uri></mesh></geometry>
+      </visual>
+      <collision name="collision">
+        <geometry><mesh><uri>model://site_box_white/mesh.obj</uri></mesh></geometry>
+      </collision>
+    </link>
+  </model>
+</sdf>

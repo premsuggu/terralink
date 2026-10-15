@@ -25,7 +25,8 @@ import numpy as np
 from emap.traversability import DIFFICULT, EASY, LETHAL
 
 
-def write_ply_points(filepath: str, points_xyz: np.ndarray, colors_rgb: np.ndarray | None = None) -> None:
+def write_ply_points(filepath: str, points_xyz: np.ndarray, colors_rgb: np.ndarray | None = None,
+                     comments: list[str] | None = None) -> None:
     """Write `points_xyz` (N, 3) as an ASCII PLY point cloud to `filepath`.
 
     Args:
@@ -60,6 +61,8 @@ def write_ply_points(filepath: str, points_xyz: np.ndarray, colors_rgb: np.ndarr
     with open(filepath, "w") as f:
         f.write("ply\n")
         f.write("format ascii 1.0\n")
+        for c in comments or []:        # e.g. "point_spacing 0.2" - read by media/3d_maps/viewer.html
+            f.write(f"comment {c}\n")
         f.write(f"element vertex {n_points}\n")
         f.write("property float x\n")
         f.write("property float y\n")

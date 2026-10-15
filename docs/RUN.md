@@ -67,7 +67,7 @@ Images from the 12 runs of step 08 are in `media/figures/path_comparison/`; deta
 
 ```bash
 source /opt/ros/humble/setup.bash
-(cd tests/nav && python3 -m pytest -q)                          # 382 tests
+(cd tests/nav && python3 -m pytest -q)                          # 405 tests
 cd tests/emap && for f in test_*.py; do python3 -m pytest -q $f; done   # 44 CPU tests; run file by file
 ```
 Running `tests/emap` as one folder collects as "skipped" here because the GPU test module's cupy import fails against the installed numpy.
@@ -91,3 +91,15 @@ ros2 topic echo /ugv/odom_ground_truth --once    # ground truth; /ugv/odom is NO
 | DDS discovery fails | `export FASTDDS_BUILTIN_TRANSPORTS=UDPv4` |
 | RViz shows no map | check `/elevation_map` is publishing |
 | Leftover processes after a run | kill the leftover `gz`/`ruby`/`ros2` PIDs explicitly (avoid `pkill -f` patterns that match your own shell) |
+
+## Stress-test worlds (step 09)
+
+```bash
+source /opt/ros/humble/setup.bash
+python3 src/nav/scripts/build_world.py w2_container_yard     # also: w1_house_site w3_excavation_slopes w4_structure_decks
+# -> src/nav/worlds/<w>.world, src/nav/maps/<w>_uavview.npz (+ _groundtruth.npz), media/worlds/<w>_world.html (open in a browser), media/3d_maps/<w>_elevation_uavview.ply
+explorer.exe "$(wslpath -w media/3d_maps/viewer.html)"   # then Open .ply File (or drag a .ply in)
+```
+Worlds are not wired into a launch file yet. The ground-truth maps are normal nav snapshots, so e.g.
+`python3 src/nav/scripts/replay_plan.py --snapshot src/nav/maps/w2_container_yard_uavview.npz --start -3 -26 --goal 24 -16 --png /tmp/plan.png`
+re-plans on them without any simulator. Details: `docs/work-docs/nav/step09_stress_worlds.md`.

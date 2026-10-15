@@ -194,6 +194,7 @@ All algorithm-level tests (fusion, GPU fusion, drift compensation, traversabilit
 | `docs/work-docs/nav/step07_astar_planner.md` | nav: A* planner, route memory, exploration, offline replay, live results |
 | `docs/work-docs/nav/sota_comparison_and_roadmap.md` | nav: comparison with published systems, remaining work, compute profile |
 | `docs/work-docs/nav/step08_path_trace_images.md` | nav: path-trace images (UGV track + every plan), PRM vs A* in two worlds, bugs found |
+| `docs/work-docs/nav/step09_stress_worlds.md` | nav: four stress-test worlds (house site, container yard, slopes, decks) with ground-truth maps and the world generator; built, not yet run |
 | `docs/work-docs/learning/` | Tutorials for the tools used (ROS 2, CuPy, GridMap, Gazebo, TF2, colcon, RViz, pytest) |
 | `docs/resource/` | Literature reviews and optimization blueprints |
 | `media/reports/TerraLink_Project_Report.docx` | Technical report (regenerate with `python3 docs/build_report.py`) |
