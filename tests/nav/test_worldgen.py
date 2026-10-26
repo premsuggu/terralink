@@ -222,6 +222,9 @@ DESIGN = {
                              "E": (True, True), "F": (True, True)},
     "w4_structure_decks": {"A": (True, True), "B": (True, False), "C": (False, False), "D": (True, True),
                            "E": (True, True), "F": (True, True)},
+    # door gauntlet (doors 1.2 ... 0.5 m): the radius a door lets through shrinks with its width; 7 (0.55) and 8 (0.5) never open
+    "w5_door_gauntlet": {"1": (True, True), "2": (True, False), "3": (True, False), "4": (True, False),
+                         "5": (True, False), "6": (True, False), "7": (False, False), "8": (False, False)},
 }
 
 

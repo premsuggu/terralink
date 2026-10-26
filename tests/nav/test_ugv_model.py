@@ -106,3 +106,26 @@ def test_worlds_drive_all_four_wheels(world):
 def test_world_generator_template_matches():
     src = open(os.path.join(NAV, "scripts", "worldgen", "run_world.py")).read()
     assert "rear_left_wheel_joint" in src and "<wheel_radius>0.098</wheel_radius>" in src and "0.49" in src
+
+
+# ---------------------------------------------------------------------------- Nav2 footprint (step 10 follow-up, 2026-10-26)
+def _costmaps(yaml_text):
+    import yaml
+    cfg = yaml.safe_load(yaml_text)
+    return cfg["local_costmap"]["local_costmap"]["ros__parameters"], cfg["global_costmap"]["global_costmap"]["ros__parameters"]
+
+
+@pytest.mark.parametrize("name", ["nav2_params.yaml", "nav2_params_large.yaml"])
+def test_nav2_footprint_is_the_models_outline(name):
+    """Both costmaps use the Jackal's rectangle (not the old circle), and the inflation is steeper than the default
+    (measured in the door gauntlet: with 3.0 / 0.55 a 0.8 m door cost 40-60 s per crossing, with 10 / 0.45 it costs 15 s)."""
+    import ast
+    text = open(os.path.join(NAV, "config", name)).read()
+    for cm in _costmaps(text):
+        assert "robot_radius" not in cm, "a circle again? the footprint is a polygon"
+        pts = ast.literal_eval(cm["footprint"])
+        xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+        assert (max(xs), min(xs)) == (0.255, -0.255) and (max(ys), min(ys)) == (0.215, -0.215)    # fender length, wheel-to-wheel width
+        infl = cm["inflation_layer"]
+        assert infl["cost_scaling_factor"] == 10.0 and infl["inflation_radius"] == 0.45
+        assert infl["inflation_radius"] > 0.333, "must exceed the circumscribed radius (sqrt(0.255^2 + 0.215^2))"

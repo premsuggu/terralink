@@ -87,15 +87,16 @@ use the lidar's 12 m (longer legs); treat a Nav2 failure as map information; non
 
 ## 4. Navigation and the vehicle
 * [x] **N-00 Realistic UGV model** (Jackal-class, 4-wheel skid-steer) - `step10`.
-* [ ] **N-01 Footprint.** Replace the circular 0.22 m by the Jackal's 0.51 x 0.43 m polygon in Nav2 and check the planner's
-  radius (needs 0.33 m clearance to turn in place). Re-test W2's 0.8 m lane and W4's doors. Success: no new failures; honest
-  minimum door width written down.
+* [x] **N-01 Footprint** (2026-10-26, `step10` section 6). Nav2 costmaps now use the Jackal's 0.51 x 0.43 m rectangle and a steeper
+  inflation (10.0 / 0.45 m). New test world **W5 door gauntlet** (doors 1.2 ... 0.5 m). Measured minimum door for A* + Nav2: **0.7 m clean
+  (15 s per door), 0.6 m marginal (195 s, 8 failed attempts), < 0.6 m refused by A***. W2 C, W3 A, W4 B (oracle) re-run: no regressions.
 * [ ] **N-02 Rough-terrain stability.** Build W3-like terrain with bumps/ruts (not only smooth slopes); drive with DWB vs
   Nav2's MPPI controller; metric: tilt (roll/pitch RMS from the pose), time, slip, failures. Slope limits of the Jackal model.
 * [ ] **N-03 Skid-steer fidelity.** The 0.49 m effective separation was measured on flat ground; check on slopes and gravel
   (friction scenarios from C-02).
-* [ ] **N-04 Nav2 vs map disagreement on narrow gaps** (0.5 m door is "free" on the map, impassable for Nav2): inflate by the
-  real footprint consistently; mark gaps closed after repeated local failure.
+* [ ] **N-04 A* vs Nav2 disagreement on narrow gaps.** Reduced by N-01 but not closed: A* accepts a 0.6 m door that Nav2 passes only after 195 s.
+  Options: make A* refuse / price doors < 0.7 m (then re-check W2's 0.8 m lane), switch DWB's `BaseObstacle` to a footprint critic or MPPI,
+  mark a gap closed after repeated local failure. Test bed: W5 (goals 5-8).
 * [ ] **N-05 Check controller tolerance** for the UGV's higher mass/inertia (accelerations, `velocity_smoother`), now that the
   vehicle is 16 kg instead of 2 kg.
 
@@ -139,17 +140,18 @@ needs lidar-inertial odometry and UAV-to-UGV map alignment.
 | Indoor mapping without UAV | not ready | EX-01..04 (reuse) |
 
 ## 10. Housekeeping
-* [ ] **R-01 Re-run W1, W3, W4 (complete-map runs) with the Jackal model** and regenerate their videos (the dot-and-arrow robot
-  marker is replaced by a to-scale Jackal drawing in `make_run_video.py`; only W2 was re-run: 46.9 m, 0.14 m error, 107 s).
+* [x] **R-01 Re-ran W2, W3, W4 (complete map) and W1 with the Jackal model**; videos regenerated with the to-scale Jackal drawing (results in
+  `step10` section 6.5; W1 row there).
 * [ ] **R-02 Regenerate the technical report** (`docs/build_report.py`) after R-01 and the classification work.
 * [ ] **R-03 Write the learning-style tutorial** for the lidar floor map / hidden islands / skid-steer (docs/work-docs/learning/).
 * [ ] **R-04 Untested snippet** in `docs/RUN.md` (offline simulator) - run it once.
 * Done and committed: stress worlds + videos + hidden-interior experiment (commit `1b6fdf2`, not yet pushed).
-* Done, uncommitted: Jackal UGV model (`step10`, `tests/nav/test_ugv_model.py`, `tests/nav/integration/`, W2 video re-rendered).
+* Done and committed: Jackal UGV model (`d8c59bb`; `step10`, `tests/nav/test_ugv_model.py`, `tests/nav/integration/`).
+* Done, uncommitted: footprint fix N-01 (Nav2 polygon + inflation, W5 door gauntlet, re-run videos, tests, docs).
 
 ## 11. Proposed order of work (for discussion)
-1. N-01 footprint + R-01 re-runs (a day; makes the new model's results trustworthy).
-2. C-01 + C-02 (classifier fix + terrain worlds): cheap, no dependencies, unblocks everything in section 2.
+1. ~~N-01 footprint + R-01 re-runs~~ (done 2026-10-26).
+2. Cell classification: the plan is proposed in `docs/work-docs/nav/cell_classification_plan.md` - **waiting for approval**; C-01 + C-02 (classifier fix + terrain worlds): cheap, no dependencies, unblocks everything in section 2.
 3. EX-01 (explore_lite baseline) - one hour tells us whether to reuse or fix.
 4. C-03/C-05 (semantic layer; elevation_mapping_cupy comparison) once GPU availability is known.
 5. L-01/L-02 localisation.

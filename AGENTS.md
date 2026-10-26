@@ -195,7 +195,8 @@ All algorithm-level tests (fusion, GPU fusion, drift compensation, traversabilit
 | `docs/work-docs/nav/sota_comparison_and_roadmap.md` | nav: comparison with published systems, remaining work, compute profile |
 | `docs/work-docs/nav/step08_path_trace_images.md` | nav: path-trace images (UGV track + every plan), PRM vs A* in two worlds, bugs found |
 | `docs/work-docs/nav/step09_stress_worlds.md` | nav: four stress-test worlds (house site, container yard, slopes, decks) with ground-truth maps and the world generator; all four worlds run live (one scenario each) with videos in `media/runs/`; goals inside roofed structures (W4 rooms) are NOT solved live - hidden-interior experiment, offline simulator and open problems documented |
-| `docs/work-docs/nav/step10_jackal_ugv_model.md` | nav: the UGV is now a Clearpath Jackal-class 4-wheel skid-steer model (meshes vendored, BSD); effective wheel separation, SDF pose-frame pitfalls, drive/terrain tests, live W2 check |
+| `docs/work-docs/nav/step10_jackal_ugv_model.md` | nav: the UGV is now a Clearpath Jackal-class 4-wheel skid-steer model (meshes vendored, BSD); effective wheel separation, SDF pose-frame pitfalls, drive/terrain tests, the Nav2 footprint fix and the W5 door gauntlet (minimum door width A* + Nav2 can pass), regression runs |
+| `docs/work-docs/nav/cell_classification_plan.md` | nav: PROPOSAL (awaiting approval) for fixing the cell classification: current weaknesses, reuse survey, phases A-E, dependencies, decisions needed |
 | `TODO.md` | root: the living to-do list and experiment plan (cell classification, exploration reuse, navigation, UAV map, localisation, use cases) |
 | `docs/work-docs/learning/` | Tutorials for the tools used (ROS 2, CuPy, GridMap, Gazebo, TF2, colcon, RViz, pytest) |
 | `docs/resource/` | Literature reviews and optimization blueprints |

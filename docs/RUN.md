@@ -111,6 +111,12 @@ python3 src/nav/scripts/build_world.py w2_container_yard            # also write
 src/nav/scripts/run_world_scenario.sh w2_container_yard -3 -26 -12 13.8 "W2 title" [uavview|groundtruth]
 # -> media/runs/<w>_run.mp4. EXTRA="..." adds launch args, FPS=10 composes a long run faster, MAX_SIM=<sim s> caps it.
 ```
+**Door gauntlet (how narrow a door can the UGV pass?)** - 8 doors, 1.2 ... 0.5 m; goal `k` (x = -14 + 4(k-1), y = 0) is behind door `k`:
+```bash
+python3 src/nav/scripts/build_world.py w5_door_gauntlet && colcon build --packages-select nav && source install/local_setup.bash
+MAX_SIM=420 FPS=10 src/nav/scripts/run_world_scenario.sh w5_door_gauntlet -20 0 6 0 "W5 door gauntlet" uavview     # goal 6 = behind the 0.6 m door
+# per-door crossing times from the recording:  poses.csv in /tmp/w5_door_gauntlet_run (columns t, x, y, yaw); walls at x = -16 + 4k
+```
 **Goals inside a roofed structure (the UGV must discover the interior itself)** - NOT solved live yet, see "Hidden interiors" in the step09 doc:
 ```bash
 EXTRA="overhead_islands:=true enable_exploration:=true stuck_feedback:=true stuck_progress_window_sec:=30.0 anomaly_hold_sec:=30.0 \

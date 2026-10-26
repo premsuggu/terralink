@@ -1,5 +1,7 @@
 # Step 09 - Four stress-test worlds for the A* planner (built, run once each on a complete map; hidden interiors NOT solved)
 
+**Update 2026-10-26:** a fifth world, W5 "door gauntlet" (8 doors, 1.2 ... 0.5 m, walls only), was added in the footprint follow-up, and the four worlds were re-run live with the new Jackal-class UGV and costmap: see `step10_jackal_ugv_model.md` sections 6.2-6.5. Every number below was measured with the OLD 0.3 m box UGV.
+
 **Status (2026-10-17):** worlds, ground-truth maps and 3D review pages are built, unit-tested and approved by the user. Each world has had ONE live run with A* given a complete map (sections "First run" and "Runs of W3, W1 and W4": all reached their goals, videos in `media/runs/`). Those runs do NOT test discovering an interior the UAV cannot see; that experiment is the last section ("Hidden interiors") and is **not solved live**. Reading order: this header -> "First run" -> "Runs of W3, W1 and W4" -> "Hidden interiors".
 **Why:** all planner evidence so far is from two small, tame worlds (maze, tunnel) with one goal each. `construction_site.world` (emap step 12) is too simple to count (a pit, a mound, a few props, no UGV/Nav2 setup). We need worlds that look and behave like real sites and contain the cases that break planners: clutter, narrow passages, slopes, dead ends, sealed spaces, overhead decks.
 **Scope decision (user):** we test the *planner* (A*), so the UAV scan is skipped: the planner gets a **ground-truth 2.5D map** computed from the world itself. The voxel map stays a UGV-side concern for later.
@@ -157,7 +159,9 @@ Findings: (1) goals must be passed to the follower as floats (`30` -> `30.000`, 
 
 ## Hidden interiors: the real-pipeline experiment (2026-10-16) - NOT solved yet
 
-The runs above gave A* a complete map. For goals INSIDE a roofed structure (W4's rooms under the deck) that is not a test of the framework: the UAV sees only the roof, so the planner must discover the interior with the UGV's own sensors. This section is that experiment: what was built, what was found, and where it stands. **Status: works in the simulator, not yet live (W4 goal B never reached).**
+The runs above gave A* a complete map. For goals INSIDE a roofed structure (W4's rooms under the deck) that is not a test of the framework: the UAV sees only the roof, so the planner must discover the interior with the UGV's own sensors. This section is that experiment: what was built, what was found, and where it stands. **Update 2026-10-26:** a fifth world, W5 "door gauntlet" (8 doors 1.2 ... 0.5 m, walls only), was added in the footprint follow-up - see `step10_jackal_ugv_model.md` section 6. All runs below used the OLD 0.3 m box UGV; the four worlds were re-run with the Jackal-class model (numbers in step10 section 6.5).
+
+**Status: works in the simulator, not yet live (W4 goal B never reached).**
 
 ### What the first real-pipeline run showed
 Real UAV scan (patrol, `emap`, no map handed over) + A* + frontier/anomaly exploration + voxel verification: the UGV never reached goal B in 900 simulated seconds. Reason: the UAV map shows the 800 m^2 deck as one flat "walkable" island fenced by a lethal ring, with NO unknown cells (so frontier exploration finds nothing), and the anomaly detector only flags small islands (a tunnel roof). The planner chased meaningless frontiers on the map edge. A 25-minute run is a bad way to find that out, hence the offline simulator below.
