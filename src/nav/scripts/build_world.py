@@ -5,7 +5,8 @@
 
 Outputs (all from ONE scene description, so they cannot drift apart):
     src/nav/models/site_*/                     Gazebo models (OBJ + palette texture)
-    src/nav/worlds/<world>.world               the Ignition world
+    src/nav/worlds/<world>.world               the Ignition world (geometry only)
+    src/nav/worlds/<world>_run.world           + the UGV at marker S and an overhead camera (for live runs / video)
     src/nav/maps/<world>_uavview.npz           planner map: what the UAV sees (decks/low roofs solid)  <- the one A* gets
     src/nav/maps/<world>_groundtruth.npz       oracle variant (sees under decks), for diagnostics only
     media/worlds/<world>_world.ply             the world as a coloured point cloud (true surface colours)
@@ -31,6 +32,7 @@ sys.path.insert(0, str(NAV))
 
 from worldgen.assets import Pack          # noqa: E402
 from worldgen.html import write_world_html   # noqa: E402
+from worldgen.run_world import run_blocks, uav_block   # noqa: E402
 from worldgen.ply import write_elevation_ply   # noqa: E402
 
 DEFAULT_PACK = REPO / "tests/worlds/gazebo_world_conversion/LowPoly-House-Construction-Site-By-Majadroid"
@@ -75,6 +77,28 @@ def main(argv=None) -> None:
           f"(UAV view, ceiling {uav_ceiling:g} m)")
 
     markers = getattr(mod, "MARKERS", None)
+    if markers:      # the runnable twin: same scene + the UGV at marker S and an overhead camera for the video
+        sx, sy = next(m for m in markers if m[0] == "S")[1]
+        # spawn on the surface under S (terrain/ramps are not at ground_z): the planner map's elevation there
+        res_m = args.res
+        col, row = int(round((sx - ucx) / res_m + trav.shape[1] / 2)), int(round((sy - ucy) / res_m + trav.shape[0] / 2))
+        spawn_z = float(uav_layers["elevation"][row, col])
+        (worlds_dir / f"{scene.name}_run.world").write_text(
+            scene.world_sdf(see_through_kinds=getattr(mod, "RUN_SEE_THROUGH", ()),
+                            extra_models=run_blocks((sx, sy, 0.0), spawn_z, scene.bounds, px=getattr(mod, "CAM_PX", 1440))))
+        print(f"[{time.time() - t:5.1f}s] wrote worlds/{scene.name}_run.world (UGV at S = ({sx}, {sy}), z = {spawn_z:.2f})")
+        patrol = getattr(mod, "PATROL", None)
+        if patrol:      # the scan twin: + the UAV, and the patrol it flies so the planner's map is built by the real pipeline
+            ux, uy = getattr(mod, "UAV_START", (sx, sy + 1.5))
+            (worlds_dir / f"{scene.name}_scan.world").write_text(
+                scene.world_sdf(see_through_kinds=getattr(mod, "RUN_SEE_THROUGH", ()),
+                                extra_models=run_blocks((sx, sy, 0.0), spawn_z, scene.bounds, px=getattr(mod, "CAM_PX", 1440))
+                                + uav_block(ux, uy)))
+            (worlds_dir / f"{scene.name}_patrol.txt").write_text(
+                "# x y z hover points of the UAV scan patrol (worldgen/run_world.py lawnmower)\n"
+                + "\n".join(f"{x:.2f} {y:.2f} {z:.2f}" for x, y, z in patrol) + "\n")
+            print(f"[{time.time() - t:5.1f}s] wrote worlds/{scene.name}_scan.world + _patrol.txt ({len(patrol)} waypoints)")
+
     if markers:
         from worldgen.feasibility import format_table, reachability
         start = next(m for m in markers if m[0] == "S")[1]

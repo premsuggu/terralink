@@ -74,25 +74,46 @@ class StuckTracker:
         zone_radius_m: float = 0.5,
         zone_sec: float = 60.0,
         zone_multiplier: float = 6.0,
+        progress_window_sec: float = 0.0,
+        progress_m: float = 0.6,
     ):
         self.window_sec = window_sec
         self.move_radius_m = move_radius_m
         self.zone_radius_m = zone_radius_m
         self.zone_sec = zone_sec
         self.zone_multiplier = zone_multiplier
+        # "No progress" detection (0 = off): the robot may JITTER (in W4 it shuffled +-0.7 m in front of a door too narrow for
+        # it for two minutes, never staying within `move_radius_m` for the window, so the dwell test above never fired).
+        # Stuck = for `progress_window_sec` it has not got `progress_m` closer to the target of the route it was handed.
+        self.progress_window_sec = progress_window_sec
+        self.progress_m = progress_m
+        self._progress: tuple[float, float, tuple[float, float]] | None = None      # (since, best distance, target)
         self._dwell: tuple[float, tuple[float, float]] | None = None
         self.zones: list[_Zone] = []
 
     def clear(self) -> None:
         self._dwell = None
+        self._progress = None
         self.zones.clear()
 
-    def note_request(self, now: float, xy: tuple[float, float], route_in_progress: bool) -> bool:
+    def note_request(self, now: float, xy: tuple[float, float], route_in_progress: bool, target_xy=None) -> bool:
         """Call on every planning request. `route_in_progress`: the PREVIOUS
         answer was a route the robot should be driving (not "no path", and not
         a viewpoint it has already reached). Returns True the moment the robot
         is judged stuck (once per stuck episode)."""
         self.zones = [z for z in self.zones if z.expires_at > now]
+        if self.progress_window_sec > 0.0 and route_in_progress and target_xy is not None:
+            d = math.dist(xy, target_xy)
+            if self._progress is None or math.dist(target_xy, self._progress[2]) > 0.5:
+                self._progress = (now, d, tuple(target_xy))                 # a new target: start timing again
+            elif d < self._progress[1] - self.progress_m:
+                self._progress = (now, d, self._progress[2])               # got closer by enough: restart the window
+            elif now - self._progress[0] >= self.progress_window_sec:
+                self._progress = None
+                self._dwell = (now, xy)
+                return True
+        elif not route_in_progress:
+            self._progress = None
         if self._dwell is None or math.dist(xy, self._dwell[1]) > self.move_radius_m:
             self._dwell = (now, xy)  # moved (or first request): restart the clock here
             return False

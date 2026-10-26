@@ -21,6 +21,7 @@ from __future__ import annotations
 import math
 
 from ..layout import CONCRETE, FENCE, HAZARD, STEEL, export_props, place, rect_walls, seg_wall, wall
+from ..run_world import lawnmower
 from ..scene import Scene
 
 NAME = "w4_structure_decks"
@@ -28,6 +29,12 @@ TITLE = "W4  Structure with decks, corridors & dead ends"
 CEILING = 3.0
 UAV_CEILING = 5.0   # UAV-view variant: just above the live patrol altitude (3.0-4.5 m in tunnel_demo/nav_sim), so decks are seen, jibs are not
 
+# The UAV scan patrol for the real-pipeline runs (`<w>_scan.world`): a lawn-mower over the site at 6 m. The deck top is
+# at 3.5 m, so the camera is 2.5 m above it (footprint ~2.9 x 2.2 m): lanes 2 m apart keep the roof free of gaps (a gap
+# would split the deck into strips and the island logic needs it whole). Flying higher was tried (9 m, 4.5 m lanes) and
+# gave a useless map: emap treats height VARIANCE as roughness, see the `max_roughness` launch argument.
+PATROL = lawnmower(-22.0, 22.0, -16.0, 16.0, 6.0, 2.0, 6.0)
+RUN_SEE_THROUGH = ("overhead",)   # run video only: the deck/roof is drawn 80 % transparent so the overhead camera sees the UGV under it
 MARKERS = [
     ("S", (-21.5, -6.0), "s", "#2ca02c"),
     ("A", (13.0, 8.0), "*", "#d62728"),      # far room, only via the true route

@@ -215,6 +215,7 @@ def test_w1_fence_ring_is_closed_except_the_packs_own_gates():
 
 # Expected feasibility of each world's markers: label -> reachable at the SMALLEST / LARGEST radius.
 DESIGN = {
+    "w1_house_site": {"A": (True, True), "B": (False, False), "C": (False, False)},
     "w2_container_yard": {"A": (True, True), "B": (True, True), "C": (True, False), "G": (False, False),
                           "D": (True, True), "E": (False, False), "F": (True, True)},
     "w3_excavation_slopes": {"A": (True, True), "B": (False, False), "C": (True, True), "D": (True, True),
@@ -327,3 +328,23 @@ def test_world_html_embeds_the_real_meshes(tmp_path):
     rgb = np.frombuffer(base64.b64decode(re.search(r'rgb = bytes\("([^"]*)"', txt).group(1)), np.uint8).reshape(-1, 3)
     assert (rgb[:12] == (255, 0, 0)).all() and (rgb[12:] == (0, 0, 255)).all()      # true colours, no classification
     assert "PointsMaterial" not in txt                                          # real surfaces, not a point cloud
+
+
+def test_run_world_adds_ugv_and_overhead_camera_covering_the_map(tmp_path):
+    """`<w>_run.world` = the review world + the UGV at S + a straight-down camera that sees the whole map."""
+    import math
+    import xml.etree.ElementTree as ET
+    sys.path.insert(0, str(REPO / "src/nav/scripts"))
+    from make_run_video import camera_geometry
+    from worldgen.run_world import run_blocks
+
+    sc = Scene("t", bounds=(-30.0, 30.0, -30.0, 30.0))
+    f = tmp_path / "t_run.world"
+    f.write_text(sc.world_sdf(extra_models=run_blocks((-3.0, -26.0, 0.0), 0.0, sc.bounds, px=1000, height=150.0)))
+    root = ET.parse(f).getroot()                                        # valid XML
+    names = [m.get("name") for m in root.iter() if m.tag in ("model", "include")] + [n.text for n in root.iter("name")]
+    assert "nav_ugv" in names and "overhead_overview_camera" in names
+    cx, cy, mpp = camera_geometry(f, 1000)
+    assert (cx, cy) == (0.0, 0.0)
+    assert 1000 * mpp >= 60.0 and 1000 * mpp < 64.0                       # footprint covers the 60 m map plus a margin
+    assert math.isclose(mpp, 2 * 150.0 * math.tan(0.5 * 2 * math.atan(31.0 / 150.0)) / 1000, rel_tol=1e-3)

@@ -167,3 +167,23 @@ class TestPlannerReactsToBeingStuck:
         gp.plan(ctx, at, _xy(30, 55), now=1.0)
         gp.plan(ctx, at, _xy(30, 55), now=40.0)
         assert "stuck" not in gp.last_note
+
+
+def test_progress_detection_catches_a_jittering_robot():
+    """A robot shuffling +-0.7 m in front of a door it cannot pass never 'stands still' (the dwell test needs < 0.25 m),
+    but it makes no progress toward its target: stuck after the progress window."""
+    from nav.stuck_feedback import StuckTracker
+    tr = StuckTracker(window_sec=18.0, progress_window_sec=30.0, progress_m=0.6)
+    target = (0.0, 0.0)
+    hits, t = [], 0.0
+    for i in range(40):
+        x = 5.0 + (0.7 if i % 2 else -0.7)                   # jitters between 4.3 and 5.7 m from the target
+        hits.append(tr.note_request(t, (x, 0.0), True, target_xy=target))
+        t += 2.0
+    assert any(hits) and not any(hits[:10])                   # not in the first 20 s; yes once 30 s went by
+
+
+def test_progress_detection_is_quiet_for_a_robot_that_keeps_getting_closer():
+    from nav.stuck_feedback import StuckTracker
+    tr = StuckTracker(progress_window_sec=30.0, progress_m=0.6)
+    assert not any(tr.note_request(float(i), (10.0 - 0.3 * i, 0.0), True, target_xy=(0.0, 0.0)) for i in range(30))

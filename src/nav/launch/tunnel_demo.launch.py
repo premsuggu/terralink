@@ -48,6 +48,13 @@ immediately triggers a fresh `get_plan` request, closing the loop Phase 4
 deliberately left open. See waypoint_follower.py/planner_node.py/
 nav.resolved_regions's own docstrings for the full mechanism.
 
+STRESS-WORLD ARGUMENTS (step 09, docs/work-docs/nav/step09_stress_worlds.md): `world:=<file in share/nav/worlds>` and
+`nav2_params:=nav2_params_large.yaml` (130 m global costmap) select a stress world; `map_snapshot:=` gives the planner a saved
+map; `patrol_file`, `global_map_length`, `emap_point_stride`, `uav_dwell_sec`, `uav_max_xy_speed`, `drift_compensation` and
+`max_roughness` configure a real UAV scan of a big world; `overhead_islands`, `viewpoint_standoff_m`, `viewpoint_block_m`,
+`uncertain_waive_m`, `stuck_progress_window_sec` and `follower_delay_sec` configure exploration of interiors the UAV cannot
+see. Every one defaults to the old behaviour, so the tunnel demo is unchanged.
+
 IMPORTANT - a real bug found from a live user run (see step06's own doc,
 "Real-user-run finding" section): if ANY process from a previous launch of
 this file (or nav_sim.launch.py) is still alive - a leftover
@@ -74,7 +81,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, GroupAction, IncludeLaunchDescription, SetEnvironmentVariable, TimerAction
 from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import EnvironmentVariable, LaunchConfiguration, PythonExpression
+from launch.substitutions import EnvironmentVariable, LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch_ros.actions import Node, SetRemap
 from launch_ros.parameter_descriptions import ParameterValue
 
@@ -83,14 +90,33 @@ def generate_launch_description():
     nav_share = get_package_share_directory('nav')
     emap_share = get_package_share_directory('emap')
 
-    world_file = os.path.join(nav_share, 'worlds', 'tunnel_test.world')
+    # `world` = a file name in share/nav/worlds (default: the tunnel world). The stress worlds use
+    # `world:=w2_container_yard_run.world` (see scripts/build_world.py) - they bring their own UGV.
+    world_file = PathJoinSubstitution([nav_share, 'worlds', LaunchConfiguration('world')])
     nav_bridge_config = os.path.join(nav_share, 'config', 'bridge.yaml')
-    nav2_params = os.path.join(nav_share, 'config', 'nav2_params.yaml')
+    # `nav2_params` = file name in share/nav/config. The default global costmap is 20 x 20 m (tunnel
+    # world); the stress worlds need `nav2_params_large.yaml` (130 x 130 m).
+    nav2_params = PathJoinSubstitution([nav_share, 'config', LaunchConfiguration('nav2_params')])
     emap_bridge_config = os.path.join(emap_share, 'config', 'bridge.yaml')
     mapping_config = os.path.join(emap_share, 'config', 'elevation_mapping.yaml')
 
     # Defaults flipped relative to nav_sim.launch.py - see this file's top
     # docstring, point 4.
+    world_arg = DeclareLaunchArgument('world', default_value='tunnel_test.world', description='World file name in share/nav/worlds.')
+    nav2_params_arg = DeclareLaunchArgument('nav2_params', default_value='nav2_params.yaml', description='Nav2 params file name in share/nav/config.')
+    patrol_file_arg = DeclareLaunchArgument('patrol_file', default_value='', description="UAV patrol: file name in share/nav/worlds with one 'x y z' hover point per line (written by build_world.py as <world>_patrol.txt). Empty = the tunnel world's built-in patrol.")
+    global_map_length_arg = DeclareLaunchArgument('global_map_length', default_value='40.0', description='Side of emap\'s persistent global map [m]; must cover the whole world (the stress worlds are up to 120 m).')
+    drift_comp_arg = DeclareLaunchArgument('drift_compensation', default_value='true', description="emap's z-drift compensation. In simulation the UAV pose is ground truth, and on long patrols the compensation itself was found to drift the map by ~0.3 m (stress world W4) - set false there.")
+    overhead_arg = DeclareLaunchArgument('overhead_islands', default_value='false', description="Goals under/inside roofs and decks the UAV only saw the top of: plan with the island treated as unknown and filled in by the UGV's own camera (nav/overhead.py). Starts floor_map_node and stops emap fusing the UGV camera into the UAV map (the two would conflict under a roof).")
+    emap_stride_arg = DeclareLaunchArgument('emap_point_stride', default_value='4', description="Keep 1 point in N of the UAV depth cloud in elevation_mapping_node. The CPU fusion cost scales with it: at 6 m altitude even N=16 leaves ~700 points per m^2 (the map has 100 cells per m^2). N=4 made the W4 scan run at ~0.25x real time.")
+    rough_arg = DeclareLaunchArgument('max_roughness', default_value='0.05', description="emap/floor map: height VARIANCE above which a cell is lethal ('roughness'). The variance model is 0.01*range^2 per observation, so a ground cell seen once from 6 m reads 0.36 and is lethal; the simulated depth camera's real noise is ~0.006 m. The stress-world scans use 0.5 so one clean observation is enough (a 30-minute scan was needed to get every cell under 0.05).")
+    standoff_arg = DeclareLaunchArgument('viewpoint_standoff_m', default_value='0.0', description="astar exploration: look at unknown space from at least this far [m]. The UGV's lidar is blind inside 0.3 m, so a viewpoint touching a wall never sees it; 0.8 for lidar-mapped interiors.")
+    block_arg = DeclareLaunchArgument('viewpoint_block_m', default_value='0.0', description='astar exploration: offer one viewpoint per block of this size [m] along a long frontier (a frontier round a whole building is otherwise ONE target and one visit blacklists it all). 3.0 for buildings.')
+    waive_arg = DeclareLaunchArgument('uncertain_waive_m', default_value='0.5', description="astar: free cells within this distance of unknown cells skip the wall inflation (lets the UGV stand next to unknown space). 0.5 also lets a plan squeeze through a door narrower than the robot whenever unknown space lies beyond it (W4's 0.5 m door: the UGV dithered in front of it for 2 minutes). Use 0.0 when the map comes from a lidar.")
+    progress_arg = DeclareLaunchArgument('stuck_progress_window_sec', default_value='0.0', description='astar stuck_feedback: also treat the UGV as stuck when it has not got closer to its target for this many seconds (it may jitter, which the standstill test cannot see). 0 = off; 30 is a good value.')
+    uav_dwell_arg = DeclareLaunchArgument('uav_dwell_sec', default_value='3.0', description='Seconds the UAV holds at each patrol point (use ~0.3 for long lawn-mower patrols: the camera fuses in flight).')
+    uav_speed_arg = DeclareLaunchArgument('uav_max_xy_speed', default_value='2.5', description='UAV patrol cruise speed [m/s].')
+    follower_delay_arg = DeclareLaunchArgument('follower_delay_sec', default_value='0.0', description='Extra seconds before the UGV follower starts (planner/Nav2 start at 9 s). Use it to let the UAV finish its scan first: scan, THEN drive.')
     headless_arg = DeclareLaunchArgument(
         'headless', default_value='false',
         description="Run gz sim server-only (no GUI window). This demo defaults to false "
@@ -236,7 +262,10 @@ def generate_launch_description():
         name='elevation_mapping_node',
         parameters=[
             mapping_config,
-            {'secondary_points_topic': '/ugv/camera/points', 'point_cloud_stride': 4},
+            {'secondary_points_topic': PythonExpression(["'' if '", LaunchConfiguration('overhead_islands'), "' == 'true' else '/ugv/camera/points'"]), 'point_cloud_stride': ParameterValue(LaunchConfiguration('emap_point_stride'), value_type=int),
+             'global_map_length': ParameterValue(LaunchConfiguration('global_map_length'), value_type=float),
+             'max_roughness': ParameterValue(LaunchConfiguration('max_roughness'), value_type=float),
+             'enable_drift_compensation': ParameterValue(LaunchConfiguration('drift_compensation'), value_type=bool)},
         ],
         output='screen',
         condition=UnlessCondition(use_snapshot),
@@ -356,6 +385,11 @@ def generate_launch_description():
             'enable_anomaly_mode': True,
             'planner_type': LaunchConfiguration('planner_type'),
             'enable_exploration': LaunchConfiguration('enable_exploration'),
+            'stuck_progress_window_sec': ParameterValue(LaunchConfiguration('stuck_progress_window_sec'), value_type=float),
+            'uncertain_waive_m': ParameterValue(LaunchConfiguration('uncertain_waive_m'), value_type=float),
+            'viewpoint_standoff_m': ParameterValue(LaunchConfiguration('viewpoint_standoff_m'), value_type=float),
+            'viewpoint_block_m': ParameterValue(LaunchConfiguration('viewpoint_block_m'), value_type=float),
+            'enable_overhead_islands': ParameterValue(LaunchConfiguration('overhead_islands'), value_type=bool),
             # ParameterValue(value_type=float): `anomaly_hold_sec:=30` would otherwise reach
             # the node as an INTEGER and be rejected (it declares a double), killing planner_node.
             'anomaly_hold_sec': ParameterValue(LaunchConfiguration('anomaly_hold_sec'), value_type=float),
@@ -411,8 +445,19 @@ def generate_launch_description():
         package='nav',
         executable='voxel_map_node',
         name='voxel_map_node',
-        parameters=[{'point_cloud_stride': 4}],
+        # ugv_odom_topic: the TRUE pose. /ugv/odom is DiffDrive wheel odometry, which starts at (0, 0) wherever the UGV
+        # spawns, so with a spawn far from the origin (the stress worlds) the eviction/insertion region was centred wrongly.
+        parameters=[{'point_cloud_stride': 4, 'ugv_odom_topic': '/ugv/odom_ground_truth'}],
         output='screen',
+    )
+    floor_map_node = Node(
+        package='nav',
+        executable='floor_map_node',
+        name='floor_map_node',
+        parameters=[{'global_map_length': ParameterValue(LaunchConfiguration('global_map_length'), value_type=float),
+                     'max_roughness': ParameterValue(LaunchConfiguration('max_roughness'), value_type=float)}],
+        output='screen',
+        condition=IfCondition(LaunchConfiguration('overhead_islands')),
     )
     # Patrol tailored to tunnel_test.world's own layout (see that file's
     # docstring): room A center/corners, room B center/corners, and a pass
@@ -462,8 +507,9 @@ def generate_launch_description():
         executable='uav_autopilot_node',
         name='uav_autopilot_node',
         parameters=[{
-            'dwell_time_sec': 3.0,
-            'max_xy_speed': 2.5,
+            'dwell_time_sec': ParameterValue(LaunchConfiguration('uav_dwell_sec'), value_type=float),
+            'max_xy_speed': ParameterValue(LaunchConfiguration('uav_max_xy_speed'), value_type=float),
+            'waypoints_file': PythonExpression(["'' if '", LaunchConfiguration('patrol_file'), "' == '' else '" + nav_share + "/worlds/' + '", LaunchConfiguration('patrol_file'), "'"]),
             'max_z_speed': 2.0,
             'waypoints_flat': [
                 -3.0, 0.0, 3.0,    # room A center (also above the UGV's start point) - CRITICAL, first
@@ -485,13 +531,28 @@ def generate_launch_description():
     bridges_and_tf_group = TimerAction(period=5.0, actions=[
         emap_bridge, camera_static_tf, mapping_node, map_replay_node, nav_bridge,
         ugv_odom_static_tf, ugv_lidar_static_tf, ugv_camera_static_tf,
-        uav_autopilot_node, voxel_map_node,
+        uav_autopilot_node, voxel_map_node, floor_map_node,
     ])
-    nav_layer_group = TimerAction(period=9.0, actions=[
-        nav2_launch, planner_node, prm_waypoint_follower,
-    ])
+    nav_layer_group = TimerAction(period=9.0, actions=[nav2_launch, planner_node])
+    follower_group = TimerAction(period=PythonExpression(['9.0 + ', LaunchConfiguration('follower_delay_sec')]),
+                                 actions=[prm_waypoint_follower])
 
     return LaunchDescription([
+        world_arg,
+        nav2_params_arg,
+        patrol_file_arg,
+        global_map_length_arg,
+        uav_dwell_arg,
+        progress_arg,
+        waive_arg,
+        standoff_arg,
+        block_arg,
+        rough_arg,
+        emap_stride_arg,
+        overhead_arg,
+        drift_comp_arg,
+        uav_speed_arg,
+        follower_delay_arg,
         headless_arg,
         goal_x_arg,
         goal_y_arg,
@@ -510,4 +571,5 @@ def generate_launch_description():
         gz_sim_gui,
         bridges_and_tf_group,
         nav_layer_group,
+        follower_group,
     ])

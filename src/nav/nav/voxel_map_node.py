@@ -190,7 +190,16 @@ class VoxelMapNode(Node):
 
         points_map_frame = transform_points(points_sensor_frame, sensor_tf)
         sensor_origin = translation_of(sensor_tf)
-        self._voxel_map.insert_points(points_map_frame, sensor_origin)
+        # Only keep points inside the bounded region around the UGV. Everything farther away would be evicted
+        # within `evict_interval_sec` anyway, but inserting it first is expensive: found live on a 50 m world,
+        # where the UAV's scan patrol (far from the UGV) grew this node to ~10 GB and starved the machine.
+        # Before the first UGV pose arrives nothing is inserted (there is no region to bound yet).
+        if self._ugv_xyz is None:
+            return
+        near = np.linalg.norm(points_map_frame - self._ugv_xyz, axis=1) <= self._voxel_map.max_radius_m
+        if not np.any(near):
+            return
+        self._voxel_map.insert_points(points_map_frame[near], sensor_origin)
 
     def _odom_callback(self, msg: Odometry) -> None:
         p = msg.pose.pose.position

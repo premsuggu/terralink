@@ -36,6 +36,9 @@ from std_msgs.msg import Bool, Float64MultiArray, String
 from emap.utils.gridmap_utils import decode_gridmap, encode_layer_to_multiarray
 from nav import astar_planner
 from nav.anomaly import compute_anomaly_mask
+from nav.overhead import GoalIslandPlanner
+from nav.replay import MapSnapshot, build_masks
+from nav.replay import _context as replay_context
 from nav.global_planner import GlobalPlanner, MapContext
 from nav.map_growth import MapGrowthTracker
 from nav.mask_latch import MaskLatch
@@ -151,6 +154,14 @@ class PlannerNode(Node):
         # Frontier exploration: when NO route to the goal exists (not even a
         # tentative one), plan to the best frontier viewpoint instead of
         # giving up. OFF by default.
+        # Elevated islands (roofs, decks): when the goal or the robot is on one, plan on the map where that island is unknown
+        # and filled in by the UGV's own camera (nav/overhead.py, nav/floor_map_node.py). Off by default.
+        self.declare_parameter("stuck_progress_window_sec", 0.0)  # stuck = no progress toward the target for this long (0 = off)
+        self.declare_parameter("uncertain_waive_m", 0.5)         # A*: free cells this near unknown cells skip the wall inflation (0 = never)
+        self.declare_parameter("viewpoint_block_m", 0.0)         # exploration: split long frontiers into blocks of this size
+        self.declare_parameter("viewpoint_standoff_m", 0.0)     # exploration: stand this far from unknown space (lidar blind zone)
+        self.declare_parameter("enable_overhead_islands", False)
+        self.declare_parameter("floor_map_topic", "/ugv_floor_map")
         self.declare_parameter("enable_exploration", False)
         self.declare_parameter("exploration_gain_weight", 1.0)
         # While the UAV is still adding to the map, do not commit to
@@ -192,6 +203,7 @@ class PlannerNode(Node):
             frontier_penalty=float(self.get_parameter("frontier_penalty").value),
             clearance_weight=float(self.get_parameter("clearance_weight").value),
             difficult_weight=float(self.get_parameter("difficult_weight").value),
+            uncertain_waive_m=float(self.get_parameter("uncertain_waive_m").value),
         )
         self._enable_plan_memory = bool(self.get_parameter("enable_plan_memory").value)
         self._enable_exploration = bool(self.get_parameter("enable_exploration").value)
@@ -205,6 +217,9 @@ class PlannerNode(Node):
             wait_for_mapping=bool(self.get_parameter("wait_for_mapping").value),
             stuck_feedback=bool(self.get_parameter("stuck_feedback").value),
             stuck_window_sec=float(self.get_parameter("stuck_window_sec").value),
+            stuck_progress_window_sec=float(self.get_parameter("stuck_progress_window_sec").value),
+            viewpoint_standoff_m=float(self.get_parameter("viewpoint_standoff_m").value),
+            viewpoint_block_m=float(self.get_parameter("viewpoint_block_m").value),
         )
         self._growth = MapGrowthTracker(
             window_sec=float(self.get_parameter("mapping_window_sec").value),
@@ -246,6 +261,12 @@ class PlannerNode(Node):
         # /elevation_map each message) and _map_callback below for where
         # it's actually applied.
         self._resolved_regions = ResolvedRegionStore()
+        self._layers = None                 # the last UAV map's layers (decoded), for the island logic
+        self._floor_layers = None           # the UGV's own map (floor_map_node), same grid
+        self._island_planner = (GoalIslandPlanner(self._global_planner)
+                                if bool(self.get_parameter("enable_overhead_islands").value) and self._planner_type == "astar" else None)
+        if self._island_planner is not None:
+            self.create_subscription(GridMap, str(self.get_parameter("floor_map_topic").value), self._floor_map_callback, 10)
 
         map_topic = self.get_parameter("map_topic").value
         self._map_sub = self.create_subscription(GridMap, map_topic, self._map_callback, 10)
@@ -289,6 +310,7 @@ class PlannerNode(Node):
 
     def _map_callback(self, msg: GridMap) -> None:
         layers = decode_gridmap(msg)
+        self._layers = layers
         self._walkable_mask = compute_walkable_mask(layers["traversability"], layers["is_valid"])
         self._traversability = layers["traversability"]
         self._unobserved_mask = ~np.asarray(layers["is_valid"]).astype(bool)
@@ -351,6 +373,14 @@ class PlannerNode(Node):
                 self._walkable_mask.shape, self._resolution, self._center_x, self._center_y
             )
 
+    def _floor_map_callback(self, msg: GridMap) -> None:
+        layers = decode_gridmap(msg)
+        if self._layers is not None and layers["is_valid"].shape != self._layers["is_valid"].shape:
+            self.get_logger().warn("floor map grid differs from the UAV map's (set the same global_map_length) - ignoring it.",
+                                   throttle_duration_sec=10.0)
+            return
+        self._floor_layers = layers
+
     def _resolved_region_callback(self, msg: Float64MultiArray) -> None:
         """step06 Phase 5: `waypoint_follower.py` has settled a previously-
         tentative anomaly segment with a real 3D voxel-map check (step06
@@ -406,6 +436,22 @@ class PlannerNode(Node):
         """The "astar" planner path - all the decision logic (plan, route
         memory, exploration) lives in `nav.global_planner.GlobalPlanner` so the
         offline replay runs exactly the same code."""
+        if self._island_planner is not None and self._layers is not None:
+            def make_ctx(layers, use_anomaly=True):
+                # the same masks `_map_callback` derives, for an arbitrary layer dict (the composed map)
+                snap = MapSnapshot(layers=layers, resolution=self._resolution, center_x=self._center_x, center_y=self._center_y)
+                masks = build_masks(
+                    snap, use_frontier=self._enable_frontier_mode or self._enable_exploration, use_anomaly=self._enable_anomaly_mode and use_anomaly,
+                    resolved=list(self._resolved_regions._regions), latch=self._anomaly_latch, now=time.monotonic(),
+                    frontier_min_width_m=self._frontier_min_width_m)
+                return replay_context(snap, masks, self._mapping_active())
+            result = self._island_planner.plan(self._layers, self._floor_layers, make_ctx, start_xy, goal_xy,
+                                               self._resolution, self._center_x, self._center_y)
+            note = self._island_planner.note + "; " + self._global_planner.last_note
+            if note != self._last_logged_note:
+                self.get_logger().info(f"global planner: {note}")
+                self._last_logged_note = note
+            return result
         ctx = MapContext(
             walkable=self._walkable_mask,
             resolution=self._resolution,

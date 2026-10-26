@@ -92,6 +92,15 @@ class ExplorationMemory:
             self.visited.append(self.target_xy)
             self.target_xy = None
 
+    def mark_failed(self, xy: tuple[float, float] | None = None) -> None:
+        """The robot was handed a route to `xy` (default: the current target) but could not get there: never offer it
+        (or anything within `blacklist_radius_m`) again, as if it had been visited."""
+        xy = xy if xy is not None else self.target_xy
+        if xy is not None:
+            self.visited.append(tuple(xy))
+        if self.target_xy is not None and xy is not None and math.dist(self.target_xy, xy) <= 0.5:
+            self.target_xy = None
+
     def is_blacklisted(self, xy: tuple[float, float]) -> bool:
         return any(math.dist(xy, v) <= self.blacklist_radius_m for v in self.visited)
 
@@ -130,6 +139,8 @@ def find_viewpoints(
     params: ap.PlannerParams | None = None,
     gain_weight: float = 1.0,
     min_target_dist_m: float = 0.5,
+    viewpoint_standoff_m: float = 0.0,
+    block_m: float = 0.0,
     **overrides,
 ) -> tuple[list[Viewpoint], "ap._Scene", "ap._Grids", np.ndarray] | None:
     """All candidate viewpoints, scored. Returns (viewpoints, scene, grids,
@@ -144,6 +155,15 @@ def find_viewpoints(
 
     `min_target_dist_m`: viewpoints closer than this to the robot are skipped
     (we are already there; a plan to the spot we stand on moves nowhere).
+
+    `viewpoint_standoff_m` (0 = off, the original behaviour: stand in a cell touching the frontier): stand at least this far
+    from the frontier (and at most ~0.3 m farther). A lidar is blind inside its minimum range (0.3 m for the UGV's), so a
+    viewpoint touching a wall can never see that wall: the unknown stays unknown and the robot is sent back again and again
+    (found live in W4: the UGV hugged the building's west wall and kept planning routes through it).
+
+    `block_m` (0 = off): split a candidate cluster into blocks of this size and offer one viewpoint per block. A frontier
+    that runs all the way round a building is ONE connected cluster; with one viewpoint per cluster, visiting it once
+    blacklisted the whole perimeter and exploration stopped with 90 % of it unseen (found in simulation).
     """
     frontier = np.asarray(frontier_mask, dtype=bool)
     walkable = np.asarray(walkable_mask, dtype=bool)
@@ -163,15 +183,28 @@ def find_viewpoints(
     g, parent = ap.dijkstra_all(grids.pass_strict, grids.cost, scene.start)
 
     # reachable cells touching (8-neighbourhood) a frontier cell
-    touching = binary_dilation(frontier, structure=np.ones((3, 3), dtype=bool))
+    if viewpoint_standoff_m > 0.0 and frontier.any():
+        d = distance_transform_edt(~frontier) * resolution                       # metres to the nearest frontier cell
+        touching = (d >= viewpoint_standoff_m) & (d <= viewpoint_standoff_m + max(3 * resolution, 0.3))
+    else:
+        touching = binary_dilation(frontier, structure=np.ones((3, 3), dtype=bool))
     candidates = touching & np.isfinite(g) & grids.pass_strict
     labels, n_clusters = label(candidates, structure=np.ones((3, 3), dtype=int))
 
     viewpoints: list[Viewpoint] = []
     goal = np.asarray(goal_xy, dtype=float)
+    groups = []
     for k in range(1, n_clusters + 1):
         rows, cols = np.nonzero(labels == k)
-        size = rows.size
+        if block_m > 0.0:
+            b = max(1, int(round(block_m / resolution)))
+            key = (rows // b) * 100003 + (cols // b)
+            for kk in np.unique(key):
+                sel = key == kk
+                groups.append((rows[sel], cols[sel], rows.size))          # gain still counts the whole cluster
+        else:
+            groups.append((rows, cols, rows.size))
+    for rows, cols, size in groups:
         best: Viewpoint | None = None
         for r, c in zip(rows.tolist(), cols.tolist()):
             xy = scene.xy_of((r, c))
@@ -301,6 +334,8 @@ def plan_exploration(
     gain_weight: float = 1.0,
     view_radius_m: float = 1.2,
     frontier_viewpoints: bool = True,
+    viewpoint_standoff_m: float = 0.0,
+    block_m: float = 0.0,
     **overrides,
 ) -> ap.AStarResult:
     """A path to the best place to go and LOOK, as an `AStarResult` with
@@ -334,7 +369,8 @@ def plan_exploration(
     found = find_viewpoints(
         walkable_mask, frontier_mask, resolution, center_x, center_y, start_xy, goal_xy,
         unobserved_mask=unobserved_mask, traversability=traversability, force_free_mask=force_free_mask,
-        cost_multiplier=cost_multiplier, params=params, gain_weight=gain_weight, **overrides,
+        cost_multiplier=cost_multiplier, params=params, gain_weight=gain_weight,
+        viewpoint_standoff_m=viewpoint_standoff_m, block_m=block_m, **overrides,
     )  # fmt: skip
     if found is None:
         return ap.AStarResult(valid=False)

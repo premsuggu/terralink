@@ -100,6 +100,32 @@ python3 src/nav/scripts/build_world.py w2_container_yard     # also: w1_house_si
 # -> src/nav/worlds/<w>.world, src/nav/maps/<w>_uavview.npz (+ _groundtruth.npz), media/worlds/<w>_world.html (open in a browser), media/3d_maps/<w>_elevation_uavview.ply
 explorer.exe "$(wslpath -w media/3d_maps/viewer.html)"   # then Open .ply File (or drag a .ply in)
 ```
-Worlds are not wired into a launch file yet. The ground-truth maps are normal nav snapshots, so e.g.
+The ground-truth maps are normal nav snapshots, so e.g.
 `python3 src/nav/scripts/replay_plan.py --snapshot src/nav/maps/w2_container_yard_uavview.npz --start -3 -26 --goal 24 -16 --png /tmp/plan.png`
-re-plans on them without any simulator. Details: `docs/work-docs/nav/step09_stress_worlds.md`.
+re-plans on them without any simulator.
+
+**One live run + video of a world (complete map given to A*)** - details in the step09 doc:
+```bash
+source /opt/ros/humble/setup.bash && colcon build --packages-select nav && source install/local_setup.bash
+python3 src/nav/scripts/build_world.py w2_container_yard            # also writes <w>_run.world (UGV + overhead camera)
+src/nav/scripts/run_world_scenario.sh w2_container_yard -3 -26 -12 13.8 "W2 title" [uavview|groundtruth]
+# -> media/runs/<w>_run.mp4. EXTRA="..." adds launch args, FPS=10 composes a long run faster, MAX_SIM=<sim s> caps it.
+```
+**Goals inside a roofed structure (the UGV must discover the interior itself)** - NOT solved live yet, see "Hidden interiors" in the step09 doc:
+```bash
+EXTRA="overhead_islands:=true enable_exploration:=true stuck_feedback:=true stuck_progress_window_sec:=30.0 anomaly_hold_sec:=30.0 \
+       global_map_length:=50.0 max_roughness:=0.5 viewpoint_standoff_m:=0.8 viewpoint_block_m:=3.0 uncertain_waive_m:=0.0" \
+MAX_SIM=900 FPS=10 src/nav/scripts/run_world_scenario.sh w4_structure_decks -21.5 -6 -12 8 "W4 hidden interior" uavview
+# full pipeline incl. a real UAV scan (~30 min wall time, only worth it once): src/nav/scripts/run_world_mission.sh (see its header)
+# offline simulator (no Gazebo, ~10-40 s per goal): the same planner + lidar mapping code as the live node
+python3 - <<'PY'
+import sys; sys.path[:0] = ["src/nav", "src/emap", "tests/nav"]
+from nav.replay import load_snapshot
+from explore_sim import ExploreSim
+base  = load_snapshot("src/nav/maps/w4_structure_decks_uavview.npz")       # what the planner is given
+truth = load_snapshot("src/nav/maps/w4_structure_decks_groundtruth.npz")   # what the simulated lidar sees
+r = ExploreSim(base, truth, (-21.5, -6.0), (-12.0, 8.0), replan_every_m=8.0).run(max_plans=250)
+print(r.reached, round(r.travelled_m), "m", round(r.seconds), "s")
+PY
+```
+Before any run: `ps -eo pid,args | grep -E "ign gazebo|nav/lib|ros2 launch"` must be empty (stale nodes silently corrupt a new run); after it, check again.

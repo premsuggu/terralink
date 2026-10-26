@@ -60,6 +60,9 @@ class UavAutopilotNode(Node):
 
         self.declare_parameter("odom_topic", "/odom")
         self.declare_parameter("waypoints_flat", [c for wp in DEFAULT_WAYPOINTS for c in wp])
+        # Optional text file, one "x y z" hover point per line (# comments ok): overrides waypoints_flat. Written by
+        # scripts/build_world.py for the stress worlds, whose patrols have dozens of points.
+        self.declare_parameter("waypoints_file", "")
         self.declare_parameter("arrival_radius_m", 0.5)
         self.declare_parameter("dwell_time_sec", 15.0)
         self.declare_parameter("loop", True)
@@ -70,6 +73,10 @@ class UavAutopilotNode(Node):
         self.declare_parameter("control_rate_hz", 5.0)
 
         flat = list(self.get_parameter("waypoints_flat").value)
+        wp_file = str(self.get_parameter("waypoints_file").value)
+        if wp_file:
+            with open(wp_file) as f:
+                flat = [float(v) for line in f if line.strip() and not line.lstrip().startswith("#") for v in line.split()[:3]]
         if len(flat) % 3 != 0:
             raise ValueError("waypoints_flat must be a flat list of x,y,z triples")
         waypoints = [tuple(flat[i:i + 3]) for i in range(0, len(flat), 3)]

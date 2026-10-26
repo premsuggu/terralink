@@ -128,10 +128,14 @@ class Scene:
         self.items.append(Item(name, sdf, verts, tris, cols, "ground"))
 
     # --------------------------------------------------------------- world --
-    def world_sdf(self, extra_models: str = "", exclude_kinds: tuple[str, ...] = ()) -> str:
-        """World file text. `exclude_kinds` drops items (used for the cut-away review render)."""
+    def world_sdf(self, extra_models: str = "", exclude_kinds: tuple[str, ...] = (),
+                  see_through_kinds: tuple[str, ...] = ()) -> str:
+        """World file text. `exclude_kinds` drops items; `see_through_kinds` keeps them (collision unchanged) but
+        renders them 80 % transparent - used by the run videos so a deck does not hide the UGV from the overhead camera."""
         r, g, b = self.ground_rgb
-        body = "\n    ".join(i.sdf for i in self.items if i.kind not in exclude_kinds)
+        body = "\n    ".join(
+            i.sdf.replace('<visual name="v">', '<visual name="v"><transparency>0.8</transparency>') if i.kind in see_through_kinds else i.sdf
+            for i in self.items if i.kind not in exclude_kinds)
         return _WORLD_TEMPLATE.format(
             name=self.name, gsize=self.ground_size, gz=self.ground_z, r=r, g=g, b=b, body=body, extra=extra_models)
 

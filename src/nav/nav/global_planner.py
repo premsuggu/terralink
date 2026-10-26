@@ -76,15 +76,20 @@ class GlobalPlanner:
         wait_for_mapping: bool = False,
         stuck_feedback: bool = False,
         stuck_window_sec: float = 18.0,
+        stuck_progress_window_sec: float = 0.0,
+        viewpoint_standoff_m: float = 0.0,
+        viewpoint_block_m: float = 0.0,
     ):
         self.params = params if params is not None else astar_planner.PlannerParams()
         self.enable_memory = enable_memory
         self.enable_exploration = enable_exploration
         self.exploration_gain_weight = exploration_gain_weight
         self.wait_for_mapping = wait_for_mapping
+        self.viewpoint_block_m = viewpoint_block_m            # exploration: one viewpoint per block of a long frontier
+        self.viewpoint_standoff_m = viewpoint_standoff_m      # exploration: look at unknown space from at least this far
         # Off by default; see nav.stuck_feedback for why a deterministic
         # planner with route memory needs it.
-        self.stuck = StuckTracker(window_sec=stuck_window_sec) if stuck_feedback else None
+        self.stuck = StuckTracker(window_sec=stuck_window_sec, progress_window_sec=stuck_progress_window_sec) if stuck_feedback else None
         self._last_result: astar_planner.AStarResult | None = None
         self.memory = PlanMemory(switch_margin=switch_margin)
         self.exploration = ExplorationMemory()
@@ -125,8 +130,13 @@ class GlobalPlanner:
 
         multiplier = None
         if self.stuck is not None:
-            if self.stuck.note_request(now, start_xy, self._route_in_progress(start_xy)):
+            last_ = self._last_result
+            target = last_.waypoints[-1] if last_ is not None and last_.valid and last_.waypoints else None
+            if self.stuck.note_request(now, start_xy, self._route_in_progress(start_xy), target_xy=target):
                 last = self._last_result
+                if last is not None and last.is_exploration and target is not None:
+                    self.exploration.mark_failed(target)          # an exploration spot nobody can reach is not worth offering again
+                    notes.append("stuck: that exploration target is blacklisted")
                 failed = list(last.waypoints) if last is not None and last.valid else []
                 self.stuck.add_zone(route_ahead_points(failed, start_xy) if failed else [start_xy], now)
                 self.memory.clear()
@@ -171,6 +181,7 @@ class GlobalPlanner:
                     traversability=ctx.traversability, force_free_mask=ctx.force_free,
                     params=self.params, gain_weight=self.exploration_gain_weight,
                     frontier_viewpoints=not waiting, cost_multiplier=multiplier,
+                    viewpoint_standoff_m=self.viewpoint_standoff_m, block_m=self.viewpoint_block_m,
                 )  # fmt: skip
                 if explored.valid and (not result.valid or explored.exploration_kind == "anomaly"):
                     result = explored
