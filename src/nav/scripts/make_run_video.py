@@ -36,6 +36,31 @@ MAIN, COLW, COLH = 900, 600, 450
 YELLOW, CYAN, GREEN, RED, ORANGE = (0, 215, 255), (255, 220, 40), (60, 200, 60), (40, 40, 230), (30, 120, 255)
 
 
+def draw_jackal(img, c, yaw: float, px_per_m: float) -> None:
+    """The UGV drawn TO SCALE from above (models/nav_ugv, a Jackal-class rover): dark body, yellow fenders at the
+    front and rear, four black wheels and the lidar puck. `c` = pixel of base_link, `yaw` = heading (rad, world frame),
+    `px_per_m` = pixels per metre. A minimum size keeps it visible in the whole-world panel, where 0.5 m is a few pixels."""
+    k = max(px_per_m, 9.0 / 0.51)                                    # never smaller than ~9 px long
+
+    def quad(x0, x1, y0, y1, col):
+        """Rectangle [x0,x1] (forward) x [y0,y1] (left) in the robot frame, filled with `col`."""
+        pts = []
+        for fx, fy in ((x0, y0), (x1, y0), (x1, y1), (x0, y1)):
+            wx, wy = fx * math.cos(yaw) - fy * math.sin(yaw), fx * math.sin(yaw) + fy * math.cos(yaw)
+            pts.append((c[0] + wx * k, c[1] - wy * k))               # image y points down
+        cv2.fillPoly(img, [np.array(pts, np.int32)], col, cv2.LINE_AA)
+
+    for wx_ in (0.131, -0.131):                                       # wheels (0.2 m diameter, 0.05 m wide)
+        for wy_ in (0.1878, -0.1878):
+            quad(wx_ - 0.1, wx_ + 0.1, wy_ - 0.04, wy_ + 0.04, (25, 25, 25))
+    quad(-0.245, 0.245, -0.165, 0.165, (55, 52, 50))                  # body
+    quad(0.12, 0.255, -0.2, 0.2, (0, 200, 255))                       # front fender (yellow, BGR)
+    quad(-0.255, -0.12, -0.2, 0.2, (0, 200, 255))                     # rear fender
+    quad(-0.1, 0.12, -0.12, 0.12, (70, 66, 64))                       # top deck
+    cv2.circle(img, (int(round(c[0] + 0.1 * math.cos(yaw) * k)), int(round(c[1] - 0.1 * math.sin(yaw) * k))),
+               max(1, int(0.05 * k)), (10, 10, 10), -1, cv2.LINE_AA)  # lidar puck at (0.1, 0)
+
+
 def read_frames(folder: Path):
     files = sorted(folder.glob("*.jpg"))
     return np.array([int(f.stem) / 1000.0 for f in files]), files
@@ -140,11 +165,8 @@ def main(argv=None) -> int:
         g = tf(*a.goal)
         cv2.drawMarker(img, g, RED, cv2.MARKER_STAR, 12 * thick, thick, cv2.LINE_AA)
         c = tf(x, y)
-        r = max(3, int(round(0.22 / mpp * scale)))                                                    # true robot radius
         cv2.circle(img, c, int(1.0 / mpp * scale), (255, 255, 255), max(1, thick - 1), cv2.LINE_AA)      # 1 m ring: easy to spot
-        cv2.circle(img, c, r, ORANGE, -1, cv2.LINE_AA)
-        tip = (int(c[0] + math.cos(yaw) * 2.2 * r), int(c[1] - math.sin(yaw) * 2.2 * r))                 # image y points down
-        cv2.arrowedLine(img, c, tip, (0, 0, 0), max(1, thick - 1), cv2.LINE_AA, tipLength=0.5)
+        draw_jackal(img, c, yaw, scale / mpp)
 
     fps = a.fps
     t_first, t_last = max(pt[0], vt[0]), pt[-1]

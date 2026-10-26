@@ -323,14 +323,14 @@ def generate_launch_description():
         executable='static_transform_publisher',
         name='ugv_lidar_static_tf',
         arguments=[
-            '--x', '0.1', '--y', '0', '--z', '0.095',
+            '--x', '0.1', '--y', '0', '--z', '0.165',
             '--frame-id', 'nav_ugv/base_link',
             '--child-frame-id', 'nav_ugv/base_link/lidar',
         ],
     )
     # NEW for step05: nav_ugv's own front-facing depth camera (see
     # models/nav_ugv/model.sdf's front_camera_link). Values match that
-    # link's own <pose> (0.18, 0, 0.05, roll=0, pitch=0.6, yaw=0) exactly -
+    # link's own <pose> (0.27, 0, 0.03, roll=0, pitch=0.6, yaw=0) exactly -
     # same convention camera_static_tf/ugv_lidar_static_tf above already
     # use (a static TF mirroring the SDF pose it's describing).
     ugv_camera_static_tf = Node(
@@ -338,7 +338,7 @@ def generate_launch_description():
         executable='static_transform_publisher',
         name='ugv_camera_static_tf',
         arguments=[
-            '--x', '0.18', '--y', '0', '--z', '0.05',
+            '--x', '0.27', '--y', '0', '--z', '0.03',
             '--roll', '0', '--pitch', '0.6', '--yaw', '0',
             '--frame-id', 'nav_ugv/base_link',
             '--child-frame-id', 'nav_ugv/front_camera_link/front_camera',

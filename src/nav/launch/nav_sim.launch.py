@@ -193,7 +193,7 @@ def generate_launch_description():
         executable='static_transform_publisher',
         name='ugv_lidar_static_tf',
         arguments=[
-            '--x', '0.1', '--y', '0', '--z', '0.095',
+            '--x', '0.1', '--y', '0', '--z', '0.165',
             '--frame-id', 'nav_ugv/base_link',
             '--child-frame-id', 'nav_ugv/base_link/lidar',
         ],

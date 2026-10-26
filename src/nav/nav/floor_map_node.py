@@ -8,7 +8,7 @@ the UAV map must not be trusted and takes those cells from here).
 
 The UGV's depth camera cannot do this job: it is tilted down 0.6 rad at 0.19 m height, so it sees only a 0.1-0.9 m
 strip of floor ahead and no wall farther than ~1 m (found when a live run, planned with a 4 m camera assumption in the
-simulator, never got inside the building). The 360 degree lidar (360 rays, 0.3-12 m) is the right sensor: every ray says
+simulator, never got inside the building). The 360 degree lidar (360 rays, 0.3-12 m, on the top deck of the Jackal-class UGV) is the right sensor: every ray says
 "free up to here" and, if it stopped short of its maximum range, "occupied here".
 
 HOW
@@ -102,6 +102,7 @@ def _make_node_class():
             self.declare_parameter("publish_rate_hz", 2.0)
             self.declare_parameter("max_scan_rate_hz", 5.0)         # integrating 360 rays x 12 m is ~20 ms of NumPy
             self.declare_parameter("base_frame", "nav_ugv/base_link")
+            self.declare_parameter("lidar_height_m", 0.165)         # lidar above base_link (models/nav_ugv: top deck); floor elevation = lidar z - this
             p = lambda n: self.get_parameter(n).value               # noqa: E731
             self._frame = str(p("map_frame"))
             self._base = str(p("base_frame"))
@@ -110,6 +111,7 @@ def _make_node_class():
             self._logodds = np.zeros((n, n), np.float32)
             self._observed = np.zeros((n, n), bool)
             self._floor_z = 0.0
+            self._lidar_h = float(p("lidar_height_m"))
             self._min_dt = 1.0 / float(p("max_scan_rate_hz"))
             self._last = -1e9
             self._tf = tf2_ros.Buffer()
@@ -132,7 +134,7 @@ def _make_node_class():
             self._last = now
             q, t = tf.transform.rotation, tf.transform.translation
             yaw = math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z))
-            self._floor_z = float(t.z) - 0.095                      # the lidar sits 0.095 m above the base/floor
+            self._floor_z = float(t.z) - self._lidar_h              # the lidar sits `lidar_height_m` above base_link (= the floor level the old map used)
             integrate_scan(self._logodds, self._observed, self._res, 0.0, 0.0, (t.x, t.y), yaw, msg.ranges,
                            msg.angle_min, msg.angle_increment, max(msg.range_min, 0.3), msg.range_max)
 
