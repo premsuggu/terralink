@@ -28,6 +28,7 @@ import numpy as np
 from nav import astar_planner
 from nav.anomaly import compute_anomaly_mask
 from nav.global_planner import GlobalPlanner, MapContext
+from nav.ground_layer import combine_ground
 from nav.map_growth import MapGrowthTracker
 from nav.mask_latch import MaskLatch
 from nav.prm_planner import plan as prm_plan
@@ -111,7 +112,7 @@ def build_masks(
     `nav.mask_latch`) - pass the SAME latch object across successive
     snapshots to reproduce what the node does over time.
     """
-    layers = snap.layers
+    layers = combine_ground(snap.layers)
     walkable = compute_walkable_mask(layers["traversability"], layers["is_valid"])
     frontier = (
         compute_frontier_mask(

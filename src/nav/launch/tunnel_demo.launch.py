@@ -109,6 +109,7 @@ def generate_launch_description():
     drift_comp_arg = DeclareLaunchArgument('drift_compensation', default_value='true', description="emap's z-drift compensation. In simulation the UAV pose is ground truth, and on long patrols the compensation itself was found to drift the map by ~0.3 m (stress world W4) - set false there.")
     overhead_arg = DeclareLaunchArgument('overhead_islands', default_value='false', description="Goals under/inside roofs and decks the UAV only saw the top of: plan with the island treated as unknown and filled in by the UGV's own camera (nav/overhead.py). Starts floor_map_node and stops emap fusing the UGV camera into the UAV map (the two would conflict under a roof).")
     emap_stride_arg = DeclareLaunchArgument('emap_point_stride', default_value='4', description="Keep 1 point in N of the UAV depth cloud in elevation_mapping_node. The CPU fusion cost scales with it: at 6 m altitude even N=16 leaves ~700 points per m^2 (the map has 100 cells per m^2). N=4 made the W4 scan run at ~0.25x real time.")
+    ground_arg = DeclareLaunchArgument('ground_layer', default_value='false', description="emap: fuse the UGV depth camera into a SEPARATE ground map (classified by the same rules, published as ground_* layers; the planner lets it override the UAV class where it has data) instead of into the UAV map. Also enables the UGV cloud when overhead_islands is true. See step11 doc, sections 8-9.")
     rough_arg = DeclareLaunchArgument('max_roughness', default_value='0.05', description="emap (terrain_classifier:=v1 ONLY - the default v2 classifier ignores it, see step11) / floor map: height VARIANCE above which a cell is lethal ('roughness'). The variance model is 0.01*range^2 per observation, so a ground cell seen once from 6 m reads 0.36 and is lethal; the simulated depth camera's real noise is ~0.006 m. The stress-world scans use 0.5 so one clean observation is enough (a 30-minute scan was needed to get every cell under 0.05).")
     standoff_arg = DeclareLaunchArgument('viewpoint_standoff_m', default_value='0.0', description="astar exploration: look at unknown space from at least this far [m]. The UGV's lidar is blind inside 0.3 m, so a viewpoint touching a wall never sees it; 0.8 for lidar-mapped interiors.")
     block_arg = DeclareLaunchArgument('viewpoint_block_m', default_value='0.0', description='astar exploration: offer one viewpoint per block of this size [m] along a long frontier (a frontier round a whole building is otherwise ONE target and one visit blacklists it all). 3.0 for buildings.')
@@ -262,7 +263,7 @@ def generate_launch_description():
         name='elevation_mapping_node',
         parameters=[
             mapping_config,
-            {'secondary_points_topic': PythonExpression(["'' if '", LaunchConfiguration('overhead_islands'), "' == 'true' else '/ugv/camera/points'"]), 'point_cloud_stride': ParameterValue(LaunchConfiguration('emap_point_stride'), value_type=int),
+            {'secondary_points_topic': PythonExpression(["'' if ('", LaunchConfiguration('overhead_islands'), "' == 'true' and '", LaunchConfiguration('ground_layer'), "' != 'true') else '/ugv/camera/points'"]), 'ground_layer': ParameterValue(LaunchConfiguration('ground_layer'), value_type=bool), 'point_cloud_stride': ParameterValue(LaunchConfiguration('emap_point_stride'), value_type=int),
              'global_map_length': ParameterValue(LaunchConfiguration('global_map_length'), value_type=float),
              'max_roughness': ParameterValue(LaunchConfiguration('max_roughness'), value_type=float),
              'enable_drift_compensation': ParameterValue(LaunchConfiguration('drift_compensation'), value_type=bool)},
@@ -330,7 +331,7 @@ def generate_launch_description():
     )
     # NEW for step05: nav_ugv's own front-facing depth camera (see
     # models/nav_ugv/model.sdf's front_camera_link). Values match that
-    # link's own <pose> (0.27, 0, 0.03, roll=0, pitch=0.6, yaw=0) exactly -
+    # link's own <pose> (0.27, 0, 0.03, roll=0, pitch=0.35, yaw=0) exactly -
     # same convention camera_static_tf/ugv_lidar_static_tf above already
     # use (a static TF mirroring the SDF pose it's describing).
     ugv_camera_static_tf = Node(
@@ -339,7 +340,7 @@ def generate_launch_description():
         name='ugv_camera_static_tf',
         arguments=[
             '--x', '0.27', '--y', '0', '--z', '0.03',
-            '--roll', '0', '--pitch', '0.6', '--yaw', '0',
+            '--roll', '0', '--pitch', '0.35', '--yaw', '0',
             '--frame-id', 'nav_ugv/base_link',
             '--child-frame-id', 'nav_ugv/front_camera_link/front_camera',
         ],
@@ -548,6 +549,7 @@ def generate_launch_description():
         standoff_arg,
         block_arg,
         rough_arg,
+        ground_arg,
         emap_stride_arg,
         overhead_arg,
         drift_comp_arg,

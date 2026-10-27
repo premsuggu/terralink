@@ -130,6 +130,11 @@ class ElevationMappingNode(Node):
         # "v1" = the old variance-as-roughness classifier.
         self.declare_parameter("terrain_classifier", "v2")
         self.declare_parameter("max_step_v2", 0.09)       # v2: step height (m) the vehicle cannot cross (measured, X-A1; v1 keeps `max_step`)
+        # step 11b: a SEPARATE ground map fed only by the secondary (UGV) cloud, classified by the same v2 rules and published as the
+        # extra `ground_*` layers of /elevation_map; nav.ground_layer.combine_ground lets it override the UAV's class where it has data.
+        # False (default) = the old behaviour (the UGV cloud, if enabled, is fused into the UAV's global map).
+        self.declare_parameter("ground_layer", False)
+        self.declare_parameter("ground_max_above_sensor", 1.0)   # m; UGV points higher than this above the camera are roofs/overhead, not floor
         self.declare_parameter("terrain_auto_noise", True)  # v2: estimate the scan's height noise from the map and compensate (DIFFICULT zone only)
         self.declare_parameter("max_roughness_m", 0.06)   # v2: residual std (m) around the local plane at which a cell is lethal
         self.declare_parameter("use_gpu_fusion", True)
@@ -244,6 +249,18 @@ class ElevationMappingNode(Node):
             length=self.get_parameter("global_map_length").value,
             initial_variance=initial_variance,
         )
+
+        self._ground_enabled = bool(self.get_parameter("ground_layer").value)
+        self._ground_max_above = float(self.get_parameter("ground_max_above_sensor").value)
+        self._ground_map = None
+        if self._ground_enabled:
+            self._ground_map = ElevationMap(
+                resolution=resolution,
+                length=self.get_parameter("global_map_length").value,
+                initial_variance=initial_variance,
+            )
+            self._ground_terrain = IncrementalTerrain(resolution, self._terrain_params,
+                                                      auto_noise=bool(self.get_parameter("terrain_auto_noise").value))
 
         # tf2_ros.Buffer holds a rolling history of recent transforms;
         # TransformListener is what actually subscribes to /tf and /tf_static
@@ -464,6 +481,12 @@ class ElevationMappingNode(Node):
         if result is None:
             return
         points_map_frame, sensor_origin = result
+        if self._ground_enabled:
+            # the UGV sees the floor from below the roof: its points go to the SEPARATE ground map (fusing them into the UAV's
+            # 2.5D cell would fight with the deck height). Points far above the camera are the underside of a roof, not floor.
+            keep = points_map_frame[:, 2] < sensor_origin[2] + self._ground_max_above
+            self._fuse_and_update_traversability(self._ground_map, points_map_frame[keep], sensor_origin, self._ground_terrain)
+            return
         self._fuse_and_update_traversability(self._global_map, points_map_frame, sensor_origin, self._global_terrain)
 
     def _fuse_and_update_traversability(self, emap: ElevationMap, points_map_frame, sensor_origin,
@@ -539,10 +562,18 @@ class ElevationMappingNode(Node):
         if self._classifier == "v2" and self._local_dirty and self._publish_count % 4 == 0:
             self._classify_v2(self._local_map, self._local_terrain)
             self._local_dirty = False
-        self._global_map_pub.publish(self._build_gridmap_msg(self._global_map))
+        self._global_map_pub.publish(self._build_gridmap_msg(self._global_map, self._ground_layers()))
         self._local_map_pub.publish(self._build_gridmap_msg(self._local_map))
 
-    def _build_gridmap_msg(self, emap: ElevationMap) -> GridMap:
+    def _ground_layers(self) -> dict | None:
+        """The ground map as extra layers of the global message (None when the ground layer is off)."""
+        if self._ground_map is None:
+            return None
+        g = self._ground_map
+        return {"ground_elevation": g.layer("elevation"), "ground_valid": g.layer("is_valid"),
+                "ground_traversability": g.layer("traversability"), "ground_confidence": g.layer("confidence")}
+
+    def _build_gridmap_msg(self, emap: ElevationMap, extra: dict | None = None) -> GridMap:
         """Build one `GridMap` message from a map's current state - see
         `utils/gridmap_utils.py` for why the layer encoding below isn't
         simply `layer.flatten().tolist()`. Shared by both maps (Section
@@ -574,6 +605,9 @@ class ElevationMappingNode(Node):
         gm.layers = list(LAYER_INDEX.keys())
         gm.basic_layers = ["elevation"]
         gm.data = [encode_layer_to_multiarray(emap.layer(name)) for name in gm.layers]
+        for name, arr in (extra or {}).items():          # e.g. the ground_* layers of the global map
+            gm.layers.append(name)
+            gm.data.append(encode_layer_to_multiarray(arr))
         gm.outer_start_index = 0
         gm.inner_start_index = 0
         return gm

@@ -118,6 +118,12 @@ python3 src/nav/scripts/eval_planning.py w2_container_yard --cache /tmp/scans   
 # X-A1 (Gazebo, ~6 min): what slopes and steps can the Jackal climb?  see the header of tests/nav/integration/ugv_limits.py
 (cd tests/emap && python3 -m pytest -q $(ls test_*.py | grep -v gpu))                     # the folder-level run collects as "skipped" (cupy import)
 ```
+python3 src/nav/scripts/eval_refine.py w2_container_yard C --cache /tmp/scans      # X-C3: UGV camera fused into the UAV map
+python3 src/nav/scripts/eval_ground.py w4_structure_decks                          # X-C4: separate ground layer under roofs
+python3 src/nav/scripts/eval_camera.py w2_container_yard C                          # X-C5: where should the UGV camera point?
+python3 src/nav/scripts/reclassify_maps.py [--check]                                # re-classify maps/*.npz with the v2 rules
+# the whole pipeline with a real UAV scan + the ground layer (~35 min wall + the video):
+EXTRA="ground_layer:=true" MAX_SIM=900 src/nav/scripts/run_world_mission.sh w4_structure_decks -21.5 -6 -12 8 22 16 "title" 50.0 /tmp/w4_ground
 Old classifier for an A/B comparison: `terrain_classifier:=v1` on `elevation_mapping_node` (then `max_roughness` matters again).
 
 **Door gauntlet (how narrow a door can the UGV pass?)** - 8 doors, 1.2 ... 0.5 m; goal `k` (x = -14 + 4(k-1), y = 0) is behind door `k`:

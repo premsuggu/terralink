@@ -12,7 +12,7 @@
          DiffDrive plugin lists both per side)
        * `base_link` sits 0.125 m above the ground (the old chassis centre), so spawn heights and the elevation
          bookkeeping (nav/floor_map_node.py: floor = lidar z - lidar height above base_link) are unchanged
-       * sensors: topics `nav_ugv/scan` (360 rays, 0.3-12 m, 10 Hz), `nav_ugv/front_camera` (rgbd, tilted down 0.6 rad,
+       * sensors: topics `nav_ugv/scan` (360 rays, 0.3-12 m, 10 Hz), `nav_ugv/front_camera` (rgbd, tilted down 0.35 rad,
          ~0.15 m above the floor like before) and `nav_ugv/video_camera`
      WHAT CHANGED (and had to be followed by launch files / worlds / floor_map_node):
        * the lidar moved UP onto the top deck, (0.10, 0, 0.165) in base_link = 0.29 m above ground (the body is 0.25 m
@@ -168,10 +168,10 @@
       <axis><xyz>0 0 1</xyz><limit><lower>-1.79769e+308</lower><upper>1.79769e+308</upper></limit></axis>
     </joint>
 
-    <!-- Front depth camera (step05): sees the floor 0.1-0.8 m ahead through a tilt of 0.6 rad; it now sits on the front
+    <!-- Front depth camera (step05): sees the floor ~0.2-3 m ahead (a ~3.5 m wide strip) through a tilt of 0.35 rad (it was 0.6 rad = a 0.9 m strip, step 11 / X-C5); it now sits on the front
          face of the body, 0.15 m above the ground. It feeds the shared /elevation_map (emap secondary points). -->
     <link name="front_camera_link">
-      <pose>0.27 0 0.155 0 0.6 0</pose>
+      <pose>0.27 0 0.155 0 0.35 0</pose>
       <inertial><mass>0.02</mass><inertia><ixx>0.000005</ixx><iyy>0.000005</iyy><izz>0.000005</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia></inertial>
       <visual name="front_camera_visual">
         <geometry><box><size>0.03 0.05 0.03</size></box></geometry>

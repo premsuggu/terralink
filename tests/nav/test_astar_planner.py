@@ -670,3 +670,35 @@ class TestPlannerParams:
             params=ap.PlannerParams(standoff_m=0.0),
         )  # fmt: skip
         assert via_override.waypoints == via_params.waypoints
+
+
+# --------------------------------------------------------------------------
+# the UGV's own shadow in a UAV scan (self-pollution), step 11b
+# --------------------------------------------------------------------------
+def test_robot_sized_blocked_blob_around_the_start_is_cleared_but_a_wall_is_not():
+    """A UAV scan sees the parked 25 cm tall Jackal as an obstacle, and the classifier's ring makes the blob ~0.4 m from the centre -
+    further than the 0.3 m footprint circle, so the robot started boxed in (live, W4 mission). The blob must be cleared as a whole,
+    while a real wall that comes near the start must stay blocked."""
+    n = 80
+    walk = _open(n)
+    sr, sc = 40, 20
+    walk[sr - 4:sr + 5, sc - 4:sc + 5] = False                      # 0.9 x 0.9 m blob: ring beyond the 0.3 m circle
+    walk[:, 60] = False                                              # a wall across the whole map, far from the start
+    path = _plan(walk, (sr, sc), (sr, 50))
+    assert path.valid and len(path.waypoints) >= 2
+
+
+def test_blocked_blob_bigger_than_a_robot_is_not_cleared():
+    n = 80
+    walk = _open(n)
+    sr, sc = 40, 20
+    walk[sr - 25:sr + 25, sc + 6:sc + 9] = False                     # a long wall 0.6 m from the start (blob area ~1.5 m^2 > 1.2)
+    ap_params = ap.PlannerParams(self_blob_max_m2=0.5)
+    path = _plan(walk, (sr, sc), (sr, 60), params=ap_params)
+    # the wall spans rows sr-25..sr+25 only, so the planner must go around it (not through the 0.3 m circle's neighbourhood)
+    assert path.valid
+    xs = [p[0] for p in path.waypoints]
+    ys = [p[1] for p in path.waypoints]
+    wall_x = _xy(0, sc + 7, n)[0]
+    crossing = [y for x, y in zip(xs, ys) if abs(x - wall_x) < 0.3]
+    assert all(abs(y) > 2.4 for y in crossing), "the route must go around the wall, not through it"

@@ -10,9 +10,10 @@ so the map and the simulated world cannot drift apart.
 Ground-truth meaning: the map is what an IDEAL overhead depth sensor would
 report, except that surfaces hovering at/above `ceiling` metres are dropped
 (a crane jib 50 m up is not a wall for a ground robot). Traversability is
-computed by the project's own `emap.traversability` with the SAME thresholds
-the live elevation node uses (max_slope 0.35, max_step 0.15, max_roughness
-0.05, resolution 0.1), not a re-implementation.
+computed by the project's own `emap.terrain_analysis` (v2) with the SAME defaults
+the live elevation node uses (slope 0.35, step 0.09, roughness 0.06, resolution
+0.1), not a re-implementation (the maps saved before 2026-10-27 used the old
+rule; `scripts/reclassify_maps.py` brought them up to date).
 """
 from __future__ import annotations
 
@@ -26,9 +27,9 @@ from .assets import Asset, export_mesh_model
 from .fbx import Mesh
 from .raster import Raster
 
-# Same thresholds as src/emap/config/elevation_mapping.yaml.
-MAX_SLOPE, MAX_STEP, MAX_ROUGHNESS = 0.35, 0.15, 0.05
-# Variance of a confidently-measured cell (well below MAX_ROUGHNESS=0.05).
+# Ground truth is classified with the node's own v2 rules (emap.terrain_analysis.TerrainParams: slope 0.35, step 0.09 measured on the
+# Jackal, roughness 0.06) on the noiseless height field - see docs/work-docs/nav/step11_terrain_classification.md.
+# Variance of a confidently-measured cell.
 CONFIDENT_VARIANCE = 0.0025
 
 
@@ -150,7 +151,7 @@ class Scene:
 
     def ground_truth(self, res: float = 0.1, ceiling: float = 8.0, oversample: int = 4):
         """Return (layers dict, centre_x, centre_y, Raster) in nav-snapshot conventions."""
-        from emap.traversability import compute_traversability
+        from emap.terrain_analysis import TerrainParams, analyze_terrain
 
         R = self.rasterize(res, ceiling, oversample)
         valid = np.isfinite(R.height)
@@ -159,8 +160,9 @@ class Scene:
         # it as flat ground at `ground_z` (the ground plane in the world file).
         is_valid = np.ones_like(elev, dtype=np.float32)
         var = np.full_like(elev, CONFIDENT_VARIANCE)
-        trav = compute_traversability(elev, var, is_valid.astype(bool), res, MAX_SLOPE, MAX_STEP, MAX_ROUGHNESS)
-        layers = {"elevation": elev, "variance": var, "is_valid": is_valid, "traversability": trav.astype(np.float32)}
+        r = analyze_terrain(elev.astype(np.float64), np.zeros(elev.shape), is_valid.astype(bool), res, TerrainParams())
+        layers = {"elevation": elev, "variance": var, "is_valid": is_valid, "traversability": r.tier.astype(np.float32),
+                  "confidence": r.confidence.astype(np.float32), "hazard": r.hazard.astype(np.float32)}
         x0, x1, y0, y1 = self.bounds
         # nav snapshots: centre of cell (row, col) = ((col - n/2)*res + cx, (row - n/2)*res + cy)
         cx = x0 + res / 2 + (R.nx / 2) * res

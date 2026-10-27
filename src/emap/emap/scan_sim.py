@@ -120,9 +120,14 @@ def drive_poses(path_xy, spacing: float = 0.4):
 
 
 def ugv_pass(emap: ElevationMap, height: np.ndarray, res: float, x0: float, y0: float, poses, *, noise_a: float = 0.002,
-             noise_b: float = 0.0, seed: int = 1, stride: int = 2) -> None:
+             noise_b: float = 0.0, seed: int = 1, stride: int = 2, pitch: float | None = None, cam_height: float | None = None,
+             far: float | None = None) -> None:
     """Drive `poses` (x, y, yaw) over the true height field and fuse the front depth camera's cloud into `emap` (in place) with the
-    same `fuse_points` and parameters the node uses for its secondary sensor. Camera = the Jackal's (see the constants above)."""
+    same `fuse_points` and parameters the node uses for its secondary sensor. Camera = the Jackal's (see the constants above) unless
+    `pitch` (rad, down), `cam_height` (m above the ground under the robot) or `far` (m) are given - for camera-placement experiments."""
+    pitch = UGV_CAM_PITCH if pitch is None else pitch
+    cam_height = UGV_CAM_HEIGHT if cam_height is None else cam_height
+    far = UGV_FAR if far is None else far
     rng = np.random.default_rng(seed)
     f = (IMG_W / 2) / np.tan(HFOV / 2)
     u = (np.arange(0, IMG_W, stride) + 0.5 - IMG_W / 2) / f
@@ -130,7 +135,7 @@ def ugv_pass(emap: ElevationMap, height: np.ndarray, res: float, x0: float, y0: 
     uu, vv = np.meshgrid(u, v)
     d_cam = np.stack([np.ones(uu.size), -uu.ravel(), -vv.ravel()], 1)       # forward, left, up (u right, v down in the image)
     d_cam /= np.linalg.norm(d_cam, axis=1, keepdims=True)
-    cp, sp = np.cos(UGV_CAM_PITCH), np.sin(UGV_CAM_PITCH)
+    cp, sp = np.cos(pitch), np.sin(pitch)
     d_body = np.stack([cp * d_cam[:, 0] + sp * d_cam[:, 2], d_cam[:, 1], -sp * d_cam[:, 0] + cp * d_cam[:, 2]], 1)   # pitch DOWN about +y
     ny, nx = height.shape
     for (px, py, yaw) in poses:
@@ -139,9 +144,9 @@ def ugv_pass(emap: ElevationMap, height: np.ndarray, res: float, x0: float, y0: 
         if not (0 <= r0 < ny and 0 <= c0 < nx):
             continue
         ground = height[r0, c0]
-        origin = np.array([px + c * UGV_CAM_OFFSET, py + s * UGV_CAM_OFFSET, ground + UGV_CAM_HEIGHT])
+        origin = np.array([px + c * UGV_CAM_OFFSET, py + s * UGV_CAM_OFFSET, ground + cam_height])
         d = np.stack([c * d_body[:, 0] - s * d_body[:, 1], s * d_body[:, 0] + c * d_body[:, 1], d_body[:, 2]], 1)
-        pts, ok = _cast(height, res, x0, y0, origin, d, UGV_FAR, res / 4.0)
+        pts, ok = _cast(height, res, x0, y0, origin, d, far, res / 4.0)
         if not ok.any():
             continue
         pts = pts[ok]

@@ -618,6 +618,8 @@ class PlannerParams:
         surface.
     footprint_radius_m: area around the START always treated as free (the
         robot is physically there; its own chassis can pollute the map).
+    self_blob_max_m2: a blocked blob touching that area and no bigger than this (m^2) is the robot's own
+        pollution (a UAV scan sees the 25 cm tall Jackal as an obstacle plus the classifier's ring) and is cleared whole.
     clearance_weight, clearance_range_m: soft keep-away-from-walls cost.
     difficult_weight: extra cost of DIFFICULT terrain.
     anomaly_penalty, frontier_penalty: cost multipliers for uncertain cells
@@ -649,6 +651,7 @@ class PlannerParams:
     inflation_margin_m: float = 0.05
     mask_rim_m: float = 0.1
     footprint_radius_m: float = 0.3
+    self_blob_max_m2: float = 1.2
     clearance_weight: float = 1.0
     clearance_range_m: float = 0.5
     difficult_weight: float = 1.0
@@ -737,6 +740,20 @@ class _Scene:
             rows_i, cols_i = np.indices(self.shape)
             near = np.hypot(rows_i - self.start[0], cols_i - self.start[1]) * resolution <= params.footprint_radius_m
             near[self.start] = True
+            # SELF-POLLUTION: a UAV scan sees the parked UGV as a 25 cm tall obstacle, and the classifier's ring around it (the 3 x 3 step
+            # test and the 5 x 5 plane window) reaches ~0.4-0.5 m from the centre - further than the 0.3 m circle above, so the robot
+            # starts boxed in by its own shadow (seen live, W4 mission, 2026-10-27: "no path" to every goal). Every blocked blob that
+            # touches the circle and is SMALL (a robot-sized object, <= `self_blob_max_m2`) is the robot's own pollution and is cleared
+            # entirely; a wall is a huge blob and is left alone (the circle alone applies there).
+            if params.self_blob_max_m2 > 0:
+                from scipy import ndimage as ndi
+                blocked = ~self.walkable
+                labels, _ = ndi.label(blocked)
+                ids = np.unique(labels[near & blocked])
+                for lab_id in ids[ids > 0]:
+                    blob = labels == lab_id
+                    if blob.sum() * resolution * resolution <= params.self_blob_max_m2:
+                        near = near | blob
             force_free = force_free | near
         self.force_free = force_free
         self.base_walkable = self.walkable | force_free

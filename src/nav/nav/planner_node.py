@@ -43,6 +43,8 @@ from nav.global_planner import GlobalPlanner, MapContext
 from nav.map_growth import MapGrowthTracker
 from nav.mask_latch import MaskLatch
 from nav.resolved_regions import ResolvedRegion, ResolvedRegionStore
+from nav.ground_layer import combine_ground
+from nav.plan_validity import plan_is_blocked
 from nav.walkability import compute_frontier_mask, compute_walkable_mask
 from nav.prm_planner import plan as prm_plan
 
@@ -291,6 +293,10 @@ class PlannerNode(Node):
         # tentative guess through unobserved territory, and therefore
         # whether it's worth periodically re-planning as the map improves.
         self._frontier_pub = self.create_publisher(Bool, "plan_has_frontier", 10)
+        # step 11b: True while the plan last handed out crosses cells that the CURRENT map knows are blocked (e.g. a wall the UGV's
+        # camera found under a roof); waypoint_follower re-plans on it. Evaluated on every map update (nav.plan_validity).
+        self._plan_blocked_pub = self.create_publisher(Bool, "plan_blocked", 10)
+        self._last_plan_waypoints = None
         # Same idea, kept as its own separate topic rather than folded into
         # plan_has_frontier - see PlanResult.has_anomaly_segments's
         # docstring for why a downstream consumer (step06 Phase 4/5) needs
@@ -309,7 +315,7 @@ class PlannerNode(Node):
         self.get_logger().info(f"planner_node: waiting for a map on {map_topic}...")
 
     def _map_callback(self, msg: GridMap) -> None:
-        layers = decode_gridmap(msg)
+        layers = combine_ground(decode_gridmap(msg))        # + the UGV's ground layer where it has data (identity without ground_* layers)
         self._layers = layers
         self._walkable_mask = compute_walkable_mask(layers["traversability"], layers["is_valid"])
         self._traversability = layers["traversability"]
@@ -329,6 +335,9 @@ class PlannerNode(Node):
         self._center_x = msg.info.pose.position.x
         self._center_y = msg.info.pose.position.y
         self._map_frame = msg.header.frame_id
+        if self._last_plan_waypoints:
+            self._plan_blocked_pub.publish(Bool(data=bool(plan_is_blocked(
+                self._last_plan_waypoints, self._walkable_mask, ~self._unobserved_mask, self._resolution, self._center_x, self._center_y))))
 
         if self._enable_anomaly_mode:
             # Cached on self, not just a local variable, so _get_plan_callback
@@ -532,6 +541,7 @@ class PlannerNode(Node):
         if result.valid:
             self._frontier_pub.publish(Bool(data=result.has_frontier_segments))
             self._anomaly_plan_pub.publish(Bool(data=result.has_anomaly_segments))
+            self._last_plan_waypoints = [(float(x), float(y)) for x, y in result.waypoints]
 
         self._publish_plan_trace(start_xy, goal_xy, result)
 

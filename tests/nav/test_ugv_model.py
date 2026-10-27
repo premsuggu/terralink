@@ -21,6 +21,7 @@ BASE_Z = 0.125            # base_link height above ground (kept from the old mod
 BODY_TOP = 0.25           # Jackal height above ground
 FRONT_FENDER_X = 0.255    # front edge of the fender mesh (jackal-fender.stl)
 WHEEL_R = 0.098
+CAM_PITCH = 0.35           # rad down; 0.6 gave a 0.9 m wide floor strip, 0.35 gives ~3.5 m (X-C5, step11 doc)
 
 
 @pytest.fixture(scope="module")
@@ -89,6 +90,8 @@ def test_launch_tf_matches_the_model():
     m = ET.parse(os.path.join(MODEL_DIR, "model.sdf")).getroot().find("model")
     cam = next(l for l in m.findall("link") if l.get("name") == "front_camera_link")
     assert _pose(cam)[0] == pytest.approx(0.27) and _pose(cam)[2] - BASE_Z == pytest.approx(0.03)
+    assert _pose(cam)[4] == pytest.approx(CAM_PITCH)                                 # the SDF tilt ...
+    assert f"'--pitch', '{CAM_PITCH}'" in src                                       # ... and the launch TF must be the same number
 
 
 @pytest.mark.parametrize("world", sorted(glob.glob(os.path.join(NAV, "worlds", "*.world"))))

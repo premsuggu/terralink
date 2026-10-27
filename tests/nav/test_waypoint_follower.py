@@ -11,6 +11,7 @@ for its own timing/cooldown checks (e.g. this mirrors the retry_interval_sec
 idea already used elsewhere in this same file).
 """
 from nav.waypoint_follower import (
+    _needs_stuck_check,
     _goal_to_resend,
     _made_progress,
     _new_resolution_to_report,
@@ -207,3 +208,24 @@ class TestGoalToResend:
     def test_no_plan_means_nothing_to_resend(self):
         assert _goal_to_resend(None, 3) is None
         assert _goal_to_resend([], 3) is None
+
+
+
+# ---------------------------------------------------------------------------- the watchdog on the FINAL leg (step 11b)
+class TestNeedsStuckCheck:
+    """Found live twice on 2026-10-27: once every waypoint had been published the stuck watchdog stopped running, so a goal that Nav2
+    never received (Nav2 not active yet: W3 never moved) or an obstacle on the last leg (W4 stalled before a wall) was never retried."""
+
+    WPS = [(0.0, 0.0), (5.0, 0.0)]
+
+    def test_runs_while_waypoints_remain(self):
+        assert _needs_stuck_check(self.WPS, 1, (0.0, 0.0), 0.5) is True
+
+    def test_runs_on_the_final_leg_until_the_robot_arrives(self):
+        assert _needs_stuck_check(self.WPS, 2, (0.0, 0.0), 0.5) is True        # all published, robot still at the start
+        assert _needs_stuck_check(self.WPS, 2, (4.0, 0.0), 0.5) is True
+        assert _needs_stuck_check(self.WPS, 2, (4.8, 0.0), 0.5) is False       # arrived: nothing to watch
+
+    def test_no_plan_no_check(self):
+        assert _needs_stuck_check(None, 0, (0.0, 0.0), 0.5) is False
+        assert _needs_stuck_check([], 0, (0.0, 0.0), 0.5) is False

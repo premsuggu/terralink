@@ -191,3 +191,81 @@ having for unobserved/occluded cells (and the near-range noise), but it needs th
 that is the next step and is NOT implemented live. Note `tunnel_demo.launch.py` currently disables the UGV cloud in the elevation map when
 `overhead_islands:=true` (a UGV cloud fused into the SAME 2.5D cell would fight with the deck height) - a separate ground map avoids that conflict.
 Sensor caveat: a camera 34 deg down sees a 1 m strip; a 3D lidar or a less tilted camera would see much more.
+
+
+## 9. Camera placement (X-C5) and the ground layer in the node (2026-10-27, later)
+**X-C5** (`eval_camera.py`; a UGV-only map classified by v2, route of W2 goal C and W3 goal C, depth noise 0.002 + 0.001 r^2). The Jackal's front camera was
+tilted 0.6 rad down, so the floor it saw was a strip of ~0.9 m (13 % of the +-3 m corridor of the route). Strip width in metres / accuracy / lethal-missed (W2 | W3):
+
+| pitch (rad), height | strip | W2 agree | W3 agree / missed-lethal | median variance |
+|---|---|---|---|---|
+| 0.60, 0.155 m (the old model) | 0.9 m | 100 % | 99.7 % / 50 % (2 cells) | 0.002 |
+| 0.45, 0.155 | 2.7-2.8 m | 100 % | 99.2 % / 0 % | 0.010 |
+| **0.30-0.35, 0.155** | **3.7-4.3 m** | 99.7 % | 98.3 % / 0 % | 0.02-0.03 |
+| 0.15, 0.155 | 3.8-4.4 m | 99.9 % | 98.5 % / 3.8 % (grazing rays) | 0.02-0.04 |
+| 0.35-0.45, 0.40-0.60 m (a mast) | 4.3-6.8 m | 97-100 % | 96-98 % | 0.02-0.03 |
+
+The mounting height barely matters (the Jackal is 0.25 m tall, a mast is not an option anyway); the tilt does: 0.35 rad gives a ~4x wider strip at an
+accuracy that is still >= 98 % and a variance 10x better than the UAV's. **The model now uses 0.35 rad** (`model.sdf`, `model.config`, the launch TF in
+`tunnel_demo.launch.py`, a test that the SDF tilt and the TF number are the same). Verified live in Gazebo (`tests/nav/integration/ugv_camera_view.py`,
+flat ground): the floor is seen from 0.40 m ahead of the base out to the horizon, 90 % of the image is floor, 0.94 m wide at 1 m and 4.1 m at the far end.
+
+**Ground layer in the node** (`ground_layer:=true`, default off): `elevation_mapping_node` keeps a SEPARATE ground map fed only by the UGV cloud (points more than
+`ground_max_above_sensor` = 1 m above the camera are roofs and are dropped), classifies it with the same v2 rules (own incremental state, auto noise) and publishes
+`ground_elevation / ground_valid / ground_traversability / ground_confidence` as extra layers of `/elevation_map`. `nav/ground_layer.py: combine_ground` (used by
+`planner_node` and by `replay.build_masks`, so live and offline cannot drift apart) lets the ground layer WIN where it has data and counts those cells as observed;
+without `ground_*` layers it is the identity. `tunnel_demo.launch.py ground_layer:=true` also enables the UGV cloud when `overhead_islands:=true` (it was off then).
+Tests: `tests/nav/test_ground_layer.py` (3), `tests/nav/test_ugv_model.py` (camera pitch / TF).
+
+**Found by the first live mission with the real pipeline (W4 goal B, ground layer on): the robot boxed itself in.** The UAV scan sees the parked
+Jackal as a 25 cm tall obstacle; the classifier's ring around it (3 x 3 step test, 5 x 5 plane window) reaches ~0.4 m from the centre, while the
+planner only force-clears a 0.3 m circle around the start (`footprint_radius_m`). Result: `get_plan: no path` to EVERY goal, the UGV never moved. The
+saved snapshot reproduced it offline (start cell lethal, a 59-cell lethal blob). Fix in `astar_planner`: every blocked blob that touches the footprint
+circle and is robot-sized (<= `self_blob_max_m2` = 1.2 m^2) is the robot's own pollution and is cleared whole; a wall is a huge blob and stays
+(`tests/nav/test_astar_planner.py`: the blob test fails with `self_blob_max_m2=0` and passes with the default). The old stress-world runs never showed
+this because they use saved maps WITHOUT the robot in them.
+
+**Event-driven re-plan (`nav/plan_validity.py`, `plan_blocked` topic, follower `enable_blocked_replan`).** In the same live mission the ground layer did its job
+(the live message showed a lethal line of cells at the wall the UGV was facing, under a deck the UAV map calls flat and walkable), but the plan had been made
+before the wall was seen and nothing asked for a new one: the UGV stood in front of the wall while Nav2 kept reporting "failed to make progress". Now
+`planner_node` tests its last plan against EVERY new map (`blocked_samples`: samples every 10 cm that lie on an OBSERVED, non-walkable cell; >= 3 samples = 0.3 m of
+path; the first 0.4 m ignored) and publishes `plan_blocked`; `waypoint_follower` re-plans at once (cooldown 3 s). Only when the plan is really affected, not on a
+timer. Unobserved cells never count as blocked (a tentative plan through the frontier stays legitimate). `tests/nav/test_plan_validity.py` (4).
+
+## 10. The first live run of the whole new pipeline: W4 goal B (2026-10-27)
+Real UAV scan (`run_world_mission.sh`, ~35 min of wall time for the 153-waypoint patrol), v2 classifier, camera tilt 0.35 rad, `ground_layer:=true`,
+blocked-plan re-plan, goal B = the dead-end room under the deck that **no earlier live run ever reached** (step09: "Hidden interiors ... NOT solved live").
+Command: `EXTRA="ground_layer:=true" MAX_SIM=900 src/nav/scripts/run_world_mission.sh w4_structure_decks -21.5 -6 -12 8 22 16 "..." 50.0 /tmp/w4_ground`.
+
+| Attempt | What happened |
+|---|---|
+| 1 | `get_plan: no path` to every goal, the UGV never moved: the UAV scan saw the Jackal as a 25 cm obstacle and its lethal ring (~0.4 m) reached past the 0.3 m footprint circle. Fixed: `self_blob_max_m2` (section 9). |
+| 2 | The UGV drove into the structure and stopped in front of a wall under the deck. The live message showed the wall as a lethal line in `ground_traversability` while the UAV layer said flat deck; the plan, made before the wall was seen, was never replaced. Fixed: `plan_blocked` + `enable_blocked_replan` (section 9). |
+| 3 | **Goal reached: final error 0.13 m, 878 simulated seconds, 366 m driven**, 61 plans handed out (22 on the goal, 33 to frontier viewpoints, 6 through anomaly cells), 89 blocked-plan re-plans, 0 stuck-recovery events. |
+
+Honest reading: the pipeline works end to end on the hardest world, and the two new mechanisms (ground layer, event-driven re-plan) are what made it work. It
+is **not efficient**: 366 m for a goal 17 m away (the earlier oracle run with a complete floor map: 76 m). The UGV learns about each interior wall only when its camera sees it
+and then re-plans; with the UAV map calling every deck cell walkable it tries doorways one after another. That is the exploration-efficiency problem of `TODO.md` section 3 (commit to a
+target, longer legs, remember closed gaps); the 89 re-plans also show that the re-plan rate needs hysteresis. One run, simulation only, not a statistic. The overhead video of this run
+(8777 frames) was not rendered to the repo (hours of CPU); the recorded run data is kept outside the repo.
+
+## 11. Decision 3 done: the saved world maps use the new rules
+`scripts/reclassify_maps.py` re-classifies `maps/*_groundtruth.npz` and `_uavview.npz` from their stored elevation (no asset pack needed; the pack was deleted from the repo) and
+adds `confidence` and `hazard` layers. 0-2.7 % of the cells changed class (W5 0 %, W4 0.1 %, W1 1.3 %, W3 2.2 %, W2 2.7 %). **The feasibility tables of all five worlds are unchanged**
+(goal reachable at the smallest / largest radius, compared with `DESIGN` in `tests/nav/test_worldgen.py`). `worldgen/scene.py: ground_truth` now uses the same rules for future builds,
+and the planner-map PLYs in `media/3d_maps/` were rewritten from the new maps. The old v1 classifier stays in `emap/traversability.py` (node parameter `terrain_classifier:=v1`).
+
+## 12. Regression runs with everything changed, and a watchdog bug they found
+Snapshot scenarios (`run_world_scenario.sh`, the saved maps now re-classified, camera 0.35 rad, v2 defaults), one run each, simulation:
+
+| Scenario | Before (step10) | Now |
+|---|---|---|
+| W2 goal C (46 m, 0.8 m lane) | 46.7 m, 88 s | 46.9 m, 106 s, reached |
+| W3 goal A (ramp into the pit) | 28.6 m, 58 s | 28.3 m, 52 s, reached |
+| W5 goal 5 (behind the 0.7 m door), camera 0.35 rad / 0.6 rad | - | 39.7 m, 102 s / 39.6 m, 102 s: **the tilt makes no difference** |
+W1 (23 min of wall time) and the W5 goal behind the marginal 0.6 m door were not re-run (one run of that door in this session did not pass within 420 s; the door is documented as marginal, 195 s in the earlier run).
+
+The first W3 attempts **never moved (0.00 m driven, twice)**. Cause, found in the follower, same as the W4 stall: the stuck watchdog (`enable_stuck_recovery`) only ran while
+waypoints were still to be published. With a 2-waypoint plan the last goal is published at once, so a goal Nav2 dropped because it was not active yet was never re-sent (the code
+even had a docstring for exactly this case, but the final leg was outside the watchdog). Fix: `_needs_stuck_check` keeps the watchdog running on the final leg until the robot arrives
+(`tests/nav/test_waypoint_follower.py::TestNeedsStuckCheck`, 3 tests). Tests now: 457 nav, 77 emap.

@@ -185,6 +185,19 @@ def _made_progress(
     return math.hypot(current_xy[0] - reference_xy[0], current_xy[1] - reference_xy[1]) >= progress_radius_m
 
 
+def _needs_stuck_check(waypoints, next_index: int, current_xy, reached_radius_m: float) -> bool:
+    """Should the no-progress watchdog run now? Yes while waypoints remain to be published, AND on the final leg after the LAST waypoint
+    was published but the robot has not arrived. The old rule ("only while waypoints remain") made the watchdog blind exactly when a
+    goal can get lost: Nav2 not yet active when the last goal was published, or an obstacle on the last leg (seen live: W3 with a
+    2-waypoint plan never moved, W4 stalled in front of a wall on the last leg of a 4-waypoint plan; nothing ever re-sent the goal)."""
+    if not waypoints:
+        return False
+    if next_index < len(waypoints):
+        return True
+    last = waypoints[-1]
+    return math.hypot(last[0] - current_xy[0], last[1] - current_xy[1]) >= reached_radius_m
+
+
 def _plan_is_tentative(has_frontier: bool, has_anomaly: bool) -> bool:
     """Pure predicate, pulled out for the same reason `_should_replan` is:
     unit-testable without ROS, and a single source of truth for "is the plan
@@ -550,6 +563,15 @@ class WaypointFollower(Node):
         # `stuck_progress_radius_m` in `stuck_timeout_sec`, request a fresh
         # plan regardless of WHY it stalled, rather than trying to
         # enumerate every possible stall cause individually.
+        # step 11b: event-driven re-plan. planner_node publishes `plan_blocked` (True while the plan it last handed out crosses cells the
+        # CURRENT map knows are blocked - e.g. a wall the UGV's own camera found under a roof, via the ground layer); with this on, the
+        # follower asks for a fresh plan at once (at most every `blocked_replan_interval_sec`) instead of driving up to the wall and
+        # waiting for Nav2 to give up. Off by default.
+        self.declare_parameter("enable_blocked_replan", False)
+        self.declare_parameter("blocked_replan_interval_sec", 3.0)
+        self._enable_blocked_replan = bool(self.get_parameter("enable_blocked_replan").value)
+        self._blocked_replan_interval_sec = float(self.get_parameter("blocked_replan_interval_sec").value)
+        self._last_blocked_replan_time: float | None = None
         self.declare_parameter("enable_stuck_recovery", False)
         self.declare_parameter("stuck_timeout_sec", 20.0)
         self.declare_parameter("stuck_progress_radius_m", 0.15)
@@ -584,6 +606,7 @@ class WaypointFollower(Node):
         self._frontier_sub = self.create_subscription(Bool, "plan_has_frontier", self._frontier_callback, 10)
         self._anomaly_plan_sub = self.create_subscription(Bool, "plan_has_anomaly", self._anomaly_callback, 10)
         self._voxel_verdict_sub = self.create_subscription(String, "voxel_verification", self._voxel_verdict_callback, 10)
+        self._plan_blocked_sub = self.create_subscription(Bool, "plan_blocked", self._plan_blocked_callback, 10)
         self._verify_request_pub = self.create_publisher(Float64MultiArray, "verify_region_request", 10)
         # step06 Phase 5 - see this module's docstring and
         # nav.resolved_regions.ResolvedRegionStore for the receiving side.
@@ -598,6 +621,17 @@ class WaypointFollower(Node):
         # Set when stuck recovery asks for a plan, so that an UNCHANGED answer
         # still resends the current goal (see `_goal_to_resend`).
         self._resend_goal_on_equal_plan = False
+
+    def _plan_blocked_callback(self, msg: Bool) -> None:
+        """planner_node says the plan we are driving now crosses known-blocked cells (see enable_blocked_replan)."""
+        if not (self._enable_blocked_replan and msg.data and self._requested and self._waypoints is not None):
+            return
+        now = time.monotonic()
+        if not _should_replan(now, self._last_blocked_replan_time, self._blocked_replan_interval_sec):
+            return
+        self._last_blocked_replan_time = now
+        self.get_logger().warn("The plan crosses cells the map now knows are blocked - requesting a fresh plan (blocked replan).")
+        self._request_plan()
 
     def _frontier_callback(self, msg: Bool) -> None:
         self._current_plan_has_frontier = msg.data
@@ -771,7 +805,7 @@ class WaypointFollower(Node):
                     self._request_plan()
                 self._last_replan_check_xy = self._current_xy
 
-        if self._waypoints is None or self._next_index >= len(self._waypoints):
+        if not _needs_stuck_check(self._waypoints, self._next_index, self._current_xy, self._reached_radius):
             return
 
         # See enable_stuck_recovery's own declare_parameter comment for the
@@ -796,6 +830,8 @@ class WaypointFollower(Node):
                     self._resend_goal_on_equal_plan = True
                     self._request_plan()
 
+        if self._next_index >= len(self._waypoints):
+            return          # final leg: every waypoint is published, only the watchdog above applies
         target = self._waypoints[self._next_index]
         if self._next_index == 0:
             if self._publish_goal_unless_voxel_confirmed_blocked(self._current_xy, target):

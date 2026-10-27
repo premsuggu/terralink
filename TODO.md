@@ -50,15 +50,17 @@ no handling of negative obstacles (holes, trench edges) beyond the step threshol
   update); on simulated real scans 97.6-100 % agreement with the truth classification (old default: 2.5-15 %), 0.0-0.1 % false-lethal, routes equal
   to the truth routes; step limit measured with the Jackal model: 9 cm crossed / 10 cm blocked -> `max_step` 0.09 (was 0.15); slope: all ramps up
   to 35 deg crossed (limit kept at 0.35 as a policy margin). Known limitation: the rim of the observed area (needs C-06).
-* [~] **C-06 3D refinement of the classes from the UGV's own data (user idea, 2026-10-27).** One classifier, two data sources; class + confidence +
+* [x] **C-06 (first version done 2026-10-27, step11 sections 8-10) 3D refinement of the classes from the UGV's own data (user idea, 2026-10-27).** One classifier, two data sources; class + confidence +
   source per cell; UGV overrides the UAV prior where more confident; hysteresis; re-plan only when the next 10-15 m of the path is affected.
   First step: fuse the UGV depth-camera cloud into the same map through the node's `secondary_points_topic` (v2 reclassifies incrementally),
   then a `ground` layer (floor under a roof) + `clearance` layer from the UGV's points. Evaluate prior vs refined against the W1-W5 truth maps.
   Sensor caveat: the Jackal has a 2D lidar + front depth camera only. See `step11` section 8. **Offline evidence done (X-C3/X-C4): a separate ground layer
   classifies 100 % correctly the cells the UAV never saw (902 on W4, 573 under roofs); on cells the UAV already saw the gain is small after the noise
-  compensation. Open: the `ground` map in the node + the combination rule + the event-driven re-plan, then a live run.**
+  compensation. Built: `ground_layer:=true` (separate ground map in the node, `nav/ground_layer.py` combination, `plan_blocked` event-driven re-plan, self-pollution fix
+  at the start, camera tilt 0.6 -> 0.35 rad = 4x wider floor strip). **Live: W4 goal B (hidden dead-end room) reached for the first time (0.13 m, 878 sim s) - but 366 m driven, 89 re-plans:
+  open = efficiency (EX-03: commit to targets, hysteresis on re-planning).** Still open: hysteresis for classes, `ground` clearance layer, a 3D lidar option.
 * [ ] **C-07 Measure the roughness limit on the vehicle** (drive W3's rubble field / ruts; `max_roughness_m` 0.06 is a guess) and the slope limit
-  on low-friction ground (needs C-02 friction patches). Also regenerate the world maps (`maps/*.npz`, `scene.py` ground truth) with v2.
+  on low-friction ground (needs C-02 friction patches). (The world maps and `scene.py` ground truth were regenerated with v2 on 2026-10-27, `scripts/reclassify_maps.py`; feasibility tables unchanged.)
 * [ ] **C-02 Terrain-test worlds with ground types.** Add visual + friction/softness differences to the worlds (gravel, mud/soft
   patch, water puddle, grass) so classification has something to classify; keep the geometric truth map and add a *class truth map*.
 * [ ] **C-03 Semantic layer from RGB (UAV and UGV).** Candidates in order of effort: (a) a pre-trained off-road segmenter
@@ -161,7 +163,7 @@ needs lidar-inertial odometry and UAV-to-UGV map alignment.
 * Done and committed: stress worlds + videos + hidden-interior experiment (commit `1b6fdf2`, not yet pushed).
 * Done and committed: Jackal UGV model (`d8c59bb`; `step10`, `tests/nav/test_ugv_model.py`, `tests/nav/integration/`).
 * Done and committed: footprint fix N-01 (`118c8a8`).
-* Done, uncommitted (2026-10-27): C-01 terrain classification v2 (`step11`).
+* Done and committed (2026-10-27): C-01 terrain classification v2 (`10fa2ee`, `bf7a9be`). Done, uncommitted: ground layer, camera tilt, event-driven re-plan, maps reclassified (`step11` sections 9-11).
 
 ## 11. Proposed order of work (for discussion)
 1. ~~N-01 footprint + R-01 re-runs~~ (done 2026-10-26).
