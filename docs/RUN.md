@@ -111,6 +111,15 @@ python3 src/nav/scripts/build_world.py w2_container_yard            # also write
 src/nav/scripts/run_world_scenario.sh w2_container_yard -3 -26 -12 13.8 "W2 title" [uavview|groundtruth]
 # -> media/runs/<w>_run.mp4. EXTRA="..." adds launch args, FPS=10 composes a long run faster, MAX_SIM=<sim s> caps it.
 ```
+**Terrain classification experiments (no simulator needed except X-A1)** - details in `docs/work-docs/nav/step11_terrain_classification.md`:
+```bash
+python3 src/nav/scripts/eval_terrain.py w3_excavation_slopes --noise 0.01 --altitude 7   # X-C1: classifier vs truth on a simulated UAV scan (30 s; W1: 2 min)
+python3 src/nav/scripts/eval_planning.py w2_container_yard --cache /tmp/scans             # X-C2: A* routes on old / new classification vs truth
+# X-A1 (Gazebo, ~6 min): what slopes and steps can the Jackal climb?  see the header of tests/nav/integration/ugv_limits.py
+(cd tests/emap && python3 -m pytest -q $(ls test_*.py | grep -v gpu))                     # the folder-level run collects as "skipped" (cupy import)
+```
+Old classifier for an A/B comparison: `terrain_classifier:=v1` on `elevation_mapping_node` (then `max_roughness` matters again).
+
 **Door gauntlet (how narrow a door can the UGV pass?)** - 8 doors, 1.2 ... 0.5 m; goal `k` (x = -14 + 4(k-1), y = 0) is behind door `k`:
 ```bash
 python3 src/nav/scripts/build_world.py w5_door_gauntlet && colcon build --packages-select nav && source install/local_setup.bash

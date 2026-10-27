@@ -1,4 +1,4 @@
-# Cell classification - plan (PROPOSAL, awaiting approval)
+# Cell classification - plan (UPDATE 2026-10-27: the user chose the rule-based route; phase A is DONE, see step11_terrain_classification.md; phases C-E (segmentation model) are parked)
 
 Written 2026-10-26. Nothing in this plan has been implemented. It answers "how do we make the cell classification of the core
 pipeline good enough?" and follows the project rules: propose -> approval -> implement step by step with unit tests; reuse before

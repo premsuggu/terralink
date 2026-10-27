@@ -76,7 +76,10 @@ def to_layers(logodds: np.ndarray, observed: np.ndarray, floor_z: float) -> dict
     trav[lethal] = 0.0
     elev = np.full(logodds.shape, floor_z, np.float32)
     var = np.full(logodds.shape, 0.01, np.float32)
-    return {"elevation": elev, "variance": var, "is_valid": observed.astype(np.float32), "traversability": trav}
+    # confidence / hazard: the lidar floor map is a binary free/occupied map, so a lethal cell has hazard 1.0 and every
+    # observed cell is "as certain as it gets" (the layers exist so the message has every layer emap's own map has)
+    return {"elevation": elev, "variance": var, "is_valid": observed.astype(np.float32), "traversability": trav,
+            "confidence": observed.astype(np.float32), "hazard": np.where(trav == 0.0, 2.0, 0.0).astype(np.float32)}
 
 
 def _make_node_class():

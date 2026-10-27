@@ -32,12 +32,14 @@ LAYER_INDEX = {
     "variance": 1,       # uncertainty (in meters^2) of that height estimate
     "is_valid": 2,       # 1.0 once at least one measurement has landed here, else 0.0
     "traversability": 3,  # 0 (impassable) .. 1 (easy) - real computation is step 7
+    "confidence": 4,      # 0 (nothing/unsure) .. 1 (many consistent observations) - terrain_analysis (step 11)
+    "hazard": 5,          # continuous cost: 0 flat .. 1 = at the vehicle's limit .. >1 lethal - terrain_analysis (step 11)
 }
 NUM_LAYERS = len(LAYER_INDEX)
 
 
 class ElevationMap:
-    """A square grid centered on `center`, storing the 4 layers in `LAYER_INDEX`.
+    """A square grid centered on `center`, storing the layers in `LAYER_INDEX`.
 
     All four layers are stored together as ONE NumPy array of shape
     `(NUM_LAYERS, cell_n, cell_n)` rather than four separate arrays. This
@@ -105,6 +107,8 @@ class ElevationMap:
         # Optimistic default: an unobserved cell is assumed traversable until
         # a real measurement says otherwise (same convention used in src/d1).
         self._data[LAYER_INDEX["traversability"], row_slice, col_slice] = 1.0
+        self._data[LAYER_INDEX["confidence"], row_slice, col_slice] = 0.0
+        self._data[LAYER_INDEX["hazard"], row_slice, col_slice] = 0.0
 
     def layer(self, name: str) -> np.ndarray:
         """Return the live 2D array (a view, not a copy) for one named layer.

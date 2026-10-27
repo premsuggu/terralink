@@ -1,6 +1,6 @@
 # TerraLink - TODO and experiment plan
 
-Last updated 2026-10-26. This file is the living list of what we still have to do and which experiments we will run.
+Last updated 2026-10-27. This file is the living list of what we still have to do and which experiments we will run.
 Status per item: `[ ]` open, `[~]` in progress, `[x]` done. Finished work is documented in `docs/work-docs/`; this file only
 points to it. Rules of the project that apply to everything below: unit test per step, no push without approval, no stale
 background processes after a run (kill, check, cap the run time, report progress), reuse an existing solution before building
@@ -42,10 +42,21 @@ no handling of negative obstacles (holes, trench edges) beyond the step threshol
 | Aerial (UAV) traversability | URA* (aerial CNN -> traversal probability -> uncertainty-aware A*, 2023); Guastella 2017 (UAV elevation -> costmap -> D*); "Seeing Where to Deploy" (2026, UAV metric RGB -> geometric-semantic traversability for UAV-deployed UGV) | closest to our architecture | **the same shape as our pipeline**: UAV RGB semantic layer on top of the geometric layer |
 
 **Recommended plan** (to discuss before starting; each step is testable offline):
-* [ ] **C-01 Fix the geometric classifier first (no new dependency).** Separate *measurement uncertainty* from *roughness*:
+* [x] **C-01 Fix the geometric classifier first (no new dependency) - DONE 2026-10-27, `step11_terrain_classification.md`.** Separate *measurement uncertainty* from *roughness*:
   roughness = local height variation of the elevation (e.g. std of the neighbourhood), confidence = number of observations.
   Add a confidence layer and "unknown vs lethal" distinction. Unit tests with synthetic terrain (ramp, step, rubble, pit).
   Success: the stress scans work with the default `max_roughness` (no 0.5 override).
+  **Result:** `emap/terrain_analysis.py` (plane-fit slope, robust step, roughness from the elevation, confidence + hazard layers, incremental
+  update); on simulated real scans 97.6-100 % agreement with the truth classification (old default: 2.5-15 %), 0.0-0.1 % false-lethal, routes equal
+  to the truth routes; step limit measured with the Jackal model: 9 cm crossed / 10 cm blocked -> `max_step` 0.09 (was 0.15); slope: all ramps up
+  to 35 deg crossed (limit kept at 0.35 as a policy margin). Known limitation: the rim of the observed area (needs C-06).
+* [ ] **C-06 3D refinement of the classes from the UGV's own data (user idea, 2026-10-27).** One classifier, two data sources; class + confidence +
+  source per cell; UGV overrides the UAV prior where more confident; hysteresis; re-plan only when the next 10-15 m of the path is affected.
+  First step: fuse the UGV depth-camera cloud into the same map through the node's `secondary_points_topic` (v2 reclassifies incrementally),
+  then a `ground` layer (floor under a roof) + `clearance` layer from the UGV's points. Evaluate prior vs refined against the W1-W5 truth maps.
+  Sensor caveat: the Jackal has a 2D lidar + front depth camera only. See `step11` section 8.
+* [ ] **C-07 Measure the roughness limit on the vehicle** (drive W3's rubble field / ruts; `max_roughness_m` 0.06 is a guess) and the slope limit
+  on low-friction ground (needs C-02 friction patches). Also regenerate the world maps (`maps/*.npz`, `scene.py` ground truth) with v2.
 * [ ] **C-02 Terrain-test worlds with ground types.** Add visual + friction/softness differences to the worlds (gravel, mud/soft
   patch, water puddle, grass) so classification has something to classify; keep the geometric truth map and add a *class truth map*.
 * [ ] **C-03 Semantic layer from RGB (UAV and UGV).** Candidates in order of effort: (a) a pre-trained off-road segmenter
@@ -147,11 +158,12 @@ needs lidar-inertial odometry and UAV-to-UGV map alignment.
 * [ ] **R-04 Untested snippet** in `docs/RUN.md` (offline simulator) - run it once.
 * Done and committed: stress worlds + videos + hidden-interior experiment (commit `1b6fdf2`, not yet pushed).
 * Done and committed: Jackal UGV model (`d8c59bb`; `step10`, `tests/nav/test_ugv_model.py`, `tests/nav/integration/`).
-* Done, uncommitted: footprint fix N-01 (Nav2 polygon + inflation, W5 door gauntlet, re-run videos, tests, docs).
+* Done and committed: footprint fix N-01 (`118c8a8`).
+* Done, uncommitted (2026-10-27): C-01 terrain classification v2 (`step11`).
 
 ## 11. Proposed order of work (for discussion)
 1. ~~N-01 footprint + R-01 re-runs~~ (done 2026-10-26).
-2. Cell classification: the plan is proposed in `docs/work-docs/nav/cell_classification_plan.md` - **waiting for approval**; C-01 + C-02 (classifier fix + terrain worlds): cheap, no dependencies, unblocks everything in section 2.
+2. ~~C-01 rule-based classifier v2~~ (done 2026-10-27, user decided: rules, not a segmentation model). Next: C-06 (3D refinement from the UGV), C-07 (roughness/friction limits), C-02 (terrain worlds with friction patches).
 3. EX-01 (explore_lite baseline) - one hour tells us whether to reuse or fix.
 4. C-03/C-05 (semantic layer; elevation_mapping_cupy comparison) once GPU availability is known.
 5. L-01/L-02 localisation.

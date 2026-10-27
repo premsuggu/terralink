@@ -80,6 +80,7 @@ import tf2_ros
 
 from emap.elevation_map import ElevationMap, LAYER_INDEX
 from emap.fusion import fuse_points
+from emap.terrain_analysis import IncrementalTerrain, TerrainParams
 from emap.traversability import compute_traversability
 from emap.drift import estimate_vertical_drift
 from emap.utils.gridmap_utils import encode_layer_to_multiarray
@@ -124,6 +125,12 @@ class ElevationMappingNode(Node):
         self.declare_parameter("max_slope", 0.35)
         self.declare_parameter("max_step", 0.15)
         self.declare_parameter("max_roughness", 0.05)
+        # step 11 (docs/work-docs/nav/step11_terrain_classification.md): "v2" = emap.terrain_analysis (plane-fit slope,
+        # robust step, roughness from the elevation itself, confidence + hazard layers; `max_roughness` above is NOT used);
+        # "v1" = the old variance-as-roughness classifier.
+        self.declare_parameter("terrain_classifier", "v2")
+        self.declare_parameter("max_step_v2", 0.09)       # v2: step height (m) the vehicle cannot cross (measured, X-A1; v1 keeps `max_step`)
+        self.declare_parameter("max_roughness_m", 0.06)   # v2: residual std (m) around the local plane at which a cell is lethal
         self.declare_parameter("use_gpu_fusion", True)
         self.declare_parameter("enable_drift_compensation", True)
         self.declare_parameter("drift_confidence_variance_thresh", 0.05)
@@ -171,6 +178,10 @@ class ElevationMappingNode(Node):
         self._max_slope = float(self.get_parameter("max_slope").value)
         self._max_step = float(self.get_parameter("max_step").value)
         self._max_roughness = float(self.get_parameter("max_roughness").value)
+        self._classifier = str(self.get_parameter("terrain_classifier").value)
+        self._terrain_params = TerrainParams(
+            max_slope=self._max_slope, max_step=float(self.get_parameter("max_step_v2").value),
+            max_roughness=float(self.get_parameter("max_roughness_m").value))
         self._point_cloud_stride = max(1, int(self.get_parameter("point_cloud_stride").value))
 
         # step 9: resolve ONCE at startup (not re-checked every callback)
@@ -214,6 +225,13 @@ class ElevationMappingNode(Node):
             length=self.get_parameter("length").value,
             initial_variance=initial_variance,
         )
+        # v2 analysis state: the persistent map is analysed INCREMENTALLY (only the cells a cloud changed, ~1 ms instead of
+        # 0.2 s); the rolling map re-centres every callback (nearly every cell "changes"), so it is re-analysed from
+        # `_publish_maps` at a lower rate instead of per cloud.
+        self._global_terrain = IncrementalTerrain(resolution, self._terrain_params)
+        self._local_terrain = IncrementalTerrain(resolution, self._terrain_params)
+        self._local_dirty = False
+        self._publish_count = 0
         # The persistent map: constructed the same way, but move_to is never
         # called on it anywhere in this file - it stays centered at (0, 0)
         # forever and simply keeps accumulating. This is the one published
@@ -416,14 +434,14 @@ class ElevationMappingNode(Node):
         # fused into - the whole point of this map is to always be "centered
         # on me right now".
         self._local_map.move_to(base_position[0], base_position[1])
-        self._fuse_and_update_traversability(self._local_map, points_map_frame, sensor_origin)
+        self._fuse_and_update_traversability(self._local_map, points_map_frame, sensor_origin, self._local_terrain)
 
         # The global map NEVER moves - no move_to call here, ever. Points
         # that land outside its fixed extent are simply dropped by
         # fuse_points' existing in_bounds check (step 4) - nothing new to
         # handle, it already behaves correctly for a map that doesn't follow
         # the sensor.
-        self._fuse_and_update_traversability(self._global_map, points_map_frame, sensor_origin)
+        self._fuse_and_update_traversability(self._global_map, points_map_frame, sensor_origin, self._global_terrain)
 
     def _secondary_pointcloud_callback(self, msg: PointCloud2) -> None:
         """A second sensor's point cloud (see this file's module docstring
@@ -443,9 +461,10 @@ class ElevationMappingNode(Node):
         if result is None:
             return
         points_map_frame, sensor_origin = result
-        self._fuse_and_update_traversability(self._global_map, points_map_frame, sensor_origin)
+        self._fuse_and_update_traversability(self._global_map, points_map_frame, sensor_origin, self._global_terrain)
 
-    def _fuse_and_update_traversability(self, emap: ElevationMap, points_map_frame, sensor_origin) -> None:
+    def _fuse_and_update_traversability(self, emap: ElevationMap, points_map_frame, sensor_origin,
+                                        terrain: IncrementalTerrain | None = None) -> None:
         """Run one point cloud through `fuse_points` (step 4) then
         `compute_traversability` (step 7) against a single map - pulled out
         as its own method so the local and global maps in the callback above
@@ -473,6 +492,12 @@ class ElevationMappingNode(Node):
         # needs to reflect the map's current elevation/variance, so there's
         # no reason to recompute it on any different schedule than "whenever
         # that data just changed".
+        if self._classifier == "v2" and terrain is not None:
+            if terrain is self._local_terrain:
+                self._local_dirty = True              # analysed at publish time (see _publish_maps)
+            else:
+                self._classify_v2(emap, terrain)
+            return
         is_valid = emap.layer("is_valid") > 0.5
         traversability = compute_traversability(
             emap.layer("elevation"),
@@ -491,8 +516,26 @@ class ElevationMappingNode(Node):
         # every other layer already follows.
         emap.layer("traversability")[is_valid] = traversability[is_valid]
 
+    def _classify_v2(self, emap: ElevationMap, terrain: IncrementalTerrain) -> None:
+        """Run emap.terrain_analysis on one map and write the tier / confidence / hazard layers.
+
+        Same rule as the v1 path: the `traversability` layer is only written for OBSERVED cells (an unobserved cell keeps
+        its optimistic default, the caller masks by is_valid). `confidence` and `hazard` are written everywhere - they are
+        0 for an unobserved cell by construction.
+        """
+        is_valid = emap.layer("is_valid") > 0.5
+        r = terrain.update(emap.layer("elevation"), emap.layer("variance"), is_valid)
+        emap.layer("traversability")[is_valid] = r.tier[is_valid]
+        emap.layer("confidence")[:] = r.confidence
+        emap.layer("hazard")[:] = r.hazard
+
     def _publish_maps(self) -> None:
         """Publish both maps as `GridMap` messages."""
+        # the rolling map's analysis runs here, every 4th publish (0.5 Hz at the default 2 Hz): ~0.2 s of NumPy
+        self._publish_count += 1
+        if self._classifier == "v2" and self._local_dirty and self._publish_count % 4 == 0:
+            self._classify_v2(self._local_map, self._local_terrain)
+            self._local_dirty = False
         self._global_map_pub.publish(self._build_gridmap_msg(self._global_map))
         self._local_map_pub.publish(self._build_gridmap_msg(self._local_map))
 
