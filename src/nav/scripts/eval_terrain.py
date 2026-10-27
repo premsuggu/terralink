@@ -25,18 +25,24 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "..", "emap"))
 from emap.scan_sim import lawnmower, scan                                  # noqa: E402
-from emap.terrain_analysis import TerrainParams, analyze_terrain           # noqa: E402
+from emap.terrain_analysis import TerrainParams, analyze_terrain, estimate_noise_sigma   # noqa: E402
 from emap.traversability import DIFFICULT, EASY, LETHAL, compute_traversability  # noqa: E402
 
 MAPS = os.path.join(HERE, "..", "maps")
 NAMES = {LETHAL: "LETHAL", DIFFICULT: "DIFFICULT", EASY: "EASY"}
 
 
+def analyze_auto(e, v, m, res):
+    """What the node does by default: v2 with the scan's height noise estimated from the map and compensated (DIFFICULT zone only)."""
+    base = analyze_terrain(e, v, m, res, TerrainParams())
+    return analyze_terrain(e, v, m, res, TerrainParams(noise_sigma=estimate_noise_sigma(base)))
+
+
 def classifiers(res: float):
     return {
         "old(default)": lambda e, v, m: compute_traversability(e, v, m, res, 0.35, 0.15, 0.05),
         "old(rough=.5)": lambda e, v, m: compute_traversability(e, v, m, res, 0.35, 0.15, 0.5),
-        "new": lambda e, v, m: analyze_terrain(e, v, m, res, TerrainParams()).tier,
+        "new": lambda e, v, m: analyze_auto(e, v, m, res).tier,
     }
 
 

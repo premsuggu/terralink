@@ -24,7 +24,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 for p in (os.path.join(HERE, ".."), os.path.join(HERE, "..", "..", "emap"), HERE):
     sys.path.insert(0, p)
 from emap.scan_sim import lawnmower, scan                                  # noqa: E402
-from emap.terrain_analysis import TerrainParams, analyze_terrain           # noqa: E402
+from emap.terrain_analysis import TerrainParams, analyze_terrain, estimate_noise_sigma   # noqa: E402
 from emap.traversability import LETHAL, compute_traversability              # noqa: E402
 from nav import astar_planner                                              # noqa: E402
 from nav.replay import MapSnapshot, build_masks, run_plan                  # noqa: E402
@@ -88,7 +88,7 @@ def main():
     maps = {
         "truth": snapshot(elev, np.zeros_like(elev), ones, truth_t, res, cx, cy),
         "old": snapshot(e, v, m, compute_traversability(e, v, m, res, 0.35, 0.15, 0.5), res, cx, cy),
-        "new": snapshot(e, v, m, analyze_terrain(e, v, m, res, P).tier, res, cx, cy),
+        "new": snapshot(e, v, m, analyze_terrain(e, v, m, res, TerrainParams(noise_sigma=estimate_noise_sigma(analyze_terrain(e, v, m, res, P)))).tier, res, cx, cy),
     }
     masks = {k: build_masks(s) for k, s in maps.items()}
     tl = truth_t == LETHAL

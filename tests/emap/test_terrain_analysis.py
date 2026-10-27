@@ -172,3 +172,46 @@ def test_step_limit_is_the_measured_wheel_limit(step_m, tier):
     r = _run(e, v, m)
     assert r.tier[30, 29] == pytest.approx(tier) and r.tier[30, 30] == pytest.approx(tier)
     assert TerrainParams().max_step == pytest.approx(0.09)
+
+
+# ------------------------------------------------------------------------------------------- noise compensation (step 11b)
+from emap.terrain_analysis import estimate_noise_sigma
+
+
+def test_noisy_flat_ground_is_easy_once_the_noise_floor_is_known():
+    """sigma = 3 cm of height noise makes the plane fit read ~5 cm slope and the 3x3 step ~5.5 cm: half the limits, i.e. DIFFICULT.
+    With the noise floor subtracted in the soft zone those cells are EASY again."""
+    e, v, m = _flat(noise=0.03, seed=7)
+    raw = _run(e, v, m)
+    sg = estimate_noise_sigma(raw)
+    assert sg == pytest.approx(0.03, rel=0.25)
+    comp = _run(e, v, m, noise_sigma=sg)
+    inner = (slice(5, -5), slice(5, -5))
+    assert np.mean(raw.tier[inner] != EASY) > 0.5 and np.mean(comp.tier[inner] != EASY) < 0.05
+
+
+def test_noise_compensation_never_hides_a_lethal_step():
+    e, v, m = _flat(noise=0.03, seed=7)
+    e[:, 30:] += 0.14                                          # a 14 cm ledge: the vehicle cannot climb it
+    comp = _run(e, v, m, noise_sigma=0.03)
+    assert np.all(comp.tier[10:-10, 29:31] == LETHAL)
+
+
+def test_noise_estimate_is_capped_and_ignores_a_few_rough_cells():
+    e, v, m = _flat(noise=0.004, seed=2)
+    e[20:25, 20:25] += np.random.default_rng(0).uniform(-0.1, 0.1, (5, 5))          # a patch of rubble
+    assert estimate_noise_sigma(_run(e, v, m)) == pytest.approx(0.004, rel=0.3)
+    rough, v2, m2 = _flat(noise=0.2, seed=2)
+    assert estimate_noise_sigma(_run(rough, v2, m2)) <= 0.05                       # a really rough map is not "compensated" away
+
+
+def test_incremental_auto_noise_recalibrates_and_equals_a_full_recompute():
+    e, v, m = _flat(noise=0.03, seed=4)
+    inc = IncrementalTerrain(RES, TerrainParams(), auto_noise=True)
+    a = inc.update(e, v, m)
+    assert inc.params.noise_sigma == pytest.approx(0.03, rel=0.3)
+    e2 = e.copy(); e2[10:20, 10:20] += 0.2                                             # a patch changes afterwards
+    a2 = inc.update(e2, v, m)
+    f = analyze_terrain(e2, v, m, RES, inc.params)
+    for name in ("slope", "step", "roughness", "hazard", "tier"):
+        np.testing.assert_allclose(getattr(a2, name), getattr(f, name), atol=1e-6, err_msg=name)

@@ -9,9 +9,9 @@ data while it drives) is the next step, see section 8.
 
 Files: [terrain_analysis.py](../../../src/emap/emap/terrain_analysis.py) (the rules),
 [scan_sim.py](../../../src/emap/emap/scan_sim.py) (offline UAV-scan simulator),
-[eval_terrain.py](../../../src/nav/scripts/eval_terrain.py) and [eval_planning.py](../../../src/nav/scripts/eval_planning.py) (experiments),
+[eval_terrain.py](../../../src/nav/scripts/eval_terrain.py), [eval_planning.py](../../../src/nav/scripts/eval_planning.py), [eval_refine.py](../../../src/nav/scripts/eval_refine.py) and [eval_ground.py](../../../src/nav/scripts/eval_ground.py) (experiments),
 [elevation_mapping_node.py](../../../src/emap/emap/elevation_mapping_node.py) (integration),
-tests: `tests/emap/test_terrain_analysis.py` (23), `tests/emap/test_scan_sim.py` (4), `tests/nav/test_limits_world.py` (9);
+tests: `tests/emap/test_terrain_analysis.py` (27), `tests/emap/test_scan_sim.py` (6), `tests/nav/test_limits_world.py` (9);
 experiment X-A1: `tests/nav/integration/make_limits_world.py`, `ugv_limits.py`, `ugv_limits_test.world`.
 
 ## 1. The old rules, exactly (so the changes can be judged)
@@ -84,21 +84,39 @@ on the cells observed in the scan and whose whole 5 x 5 neighbourhood was observ
 | World | old default (0.05): agree | old with `max_roughness` 0.5: agree / false-lethal / missed-lethal | **new: agree / false-lethal / missed-lethal** |
 |---|---|---|---|
 | W1 house site | 8.0 % | 98.2 % / 1.0 % / 3.9 % | **99.4 % / 0.1 % / 2.6 %** |
-| W2 container yard | 7.4 % | 98.4 % / 1.2 % / 0.0 % | **97.6 % / 0.0 % / 0.2 %** |
-| W3 excavation | 15.3 % | 97.1 % / 0.1 % / 2.1 % | **99.1 % / 0.0 % / 1.2 %** |
+| W2 container yard | 7.4 % | 98.4 % / 1.2 % / 0.0 % | **98.9 % / 0.0 % / 0.2 %** |
+| W3 excavation | 15.3 % | 97.1 % / 0.1 % / 2.1 % | **98.8 % / 0.0 % / 1.2 %** |
 | W4 decks | 2.5 % | 99.6 % / 0.4 % / 0.0 % | **100.0 % / 0.0 % / 0.1 %** |
 | W5 door gauntlet | 5.0 % | 98.7 % / 1.3 % / 0.0 % | **100.0 % / 0.0 % / 0.0 %** |
 
-Noise sweep on W3 (sigma at 0 m + 0.001 per m^2): sigma 0.01 -> old(0.5) 95.5 %, new 98.8 %; sigma 0.02 + 0.0005 r^2 -> 80.0 % vs 97.8 %;
-sigma 0.03 + 0.001 r^2 -> **52.4 % vs 91.2 %** (those runs were made before the simulator's -1.8 cm bias was fixed, so absolute values are
-slightly pessimistic for both; the ordering is what counts). The old rule with the override is as good as v2 when the data is
-clean; v2 needs no override and does not fall apart when the noise grows. The remaining interior misses of v2 are slopes
-within ~0.01 of the limit (0.34 read for a true 0.36), i.e. threshold jitter, not errors.
+**High noise (11b, the production default with noise compensation, section 4b).** Sigma 0.03 + 0.001 r^2 (up to ~7 cm at 7 m),
+interior cells, agree / false-lethal / missed-lethal:
+
+| World | old with `max_roughness` 0.5 | new (noise compensated) |
+|---|---|---|
+| W2 | 38.8 % / 15.9 % / 0.1 % | **95.4 % / 2.1 % / 0.2 %** |
+| W3 | 38.5 % / 20.1 % / 9.4 % | **88.8 % / 3.5 % / 2.2 %** |
+| W4 | 48.2 % / 12.0 % / 0.0 % | **95.7 % / 1.4 % / 0.1 %** |
+| W5 | 27.9 % / 20.4 % / 0.0 % | **94.8 % / 3.3 % / 0.0 %** |
+
+The old rule with the override is as good as v2 when the data is clean; v2 needs no override and does not fall apart when the noise
+grows. The remaining interior misses of v2 at low noise are slopes within ~0.01 of the limit (0.34 read for a true 0.36), i.e.
+threshold jitter. At very high noise the residual false-lethal (1-3 %) is a sensor limit: a 9 cm ledge cannot be told from 7 cm of noise,
+and the lethal decision is deliberately not "compensated" (that would hide real 10 cm ledges).
 
 **X-C2** (`eval_planning.py`): A* from S to every goal marker on the truth map, on the old-classifier scan map and on the v2 scan map.
 Feasibility (path / no path) agrees with the truth on all 30 goals for both classifiers and no route of either touches a truth-lethal
 cell. The routes differ: v2 reproduces the truth route (W2: A 31.7 m vs truth 31.6, C 45.8 vs 45.8, **F 28.1 vs 28.0**; W3, W5: within
 0.1 m), the old rule detours (W2 A 35.0, **F 37.2**, C 47.2; W5 doors 0.4-0.9 m longer each, W3 up to 1.8 m at higher noise).
+
+**4b. Noise compensation (added after the first results).** Looking at the confusion matrix of a noisy scan (W2, sigma 0.02 + 0.0005 r^2):
+no lethal errors, but 7.5 % of flat cells came out DIFFICULT: on flat ground with height noise sigma the plane fit reads a slope of
+~1.77 sigma, the robust 3 x 3 step ~1.85 sigma, the residual ~sigma. `estimate_noise_sigma` takes sigma from the map itself (median plane
+residual of the supported cells; most cells of a site are flat; capped at 5 cm) and the DIFFICULT zone subtracts those expected readings;
+**the LETHAL decision (raw hazard > 1) is untouched.** Effect (agreement with the truth): W2 sigma~1.4 cm 93.0 -> 99.2 %, W5 93.4 -> 99.9 %, W3 sigma~1.5 cm
+91.6 -> 96.7 %, sigma~2.6 cm 54.0 -> 88.8 %, W4 sigma~2.1 cm 61.8 -> 95.7 %; at low noise (3 mm) it costs 0.3 % (W3 99.1 -> 98.8 %).
+Strength 1.0 beat 0.5 and 1.5. `IncrementalTerrain(auto_noise=True)` (the node's default, parameter `terrain_auto_noise`) re-estimates every
+20 updates and recomputes once when sigma moved by > 20 %.
 
 **Known limitation - the rim.** At the edge of the observed area a step to an UNOBSERVED cell cannot be known by any rule: the far
 side of a wall seen only from above is never scanned, so its top looks like flat ground. v2 misses 8 % (W2) and 23 % (W4) of the
@@ -143,18 +161,33 @@ have broken exploration. The 3D refinement (section 8) is the proper fix: the UG
 
 ## 7. Pitfalls found
 * `tests/emap`: running the folder collects as "1 skipped" because `test_fusion_gpu.py` fails to import cupy against this numpy and the
-  module-level skip swallows the whole run. Run `python3 -m pytest -q $(ls test_*.py | grep -v gpu)` (71 pass; `tests/nav`: 445 pass, 14 skipped - 9 of those are the world-generator tests that need the Majadroid asset pack, which was deleted from the repo in commit `646071c`).
+  module-level skip swallows the whole run. Run `python3 -m pytest -q $(ls test_*.py | grep -v gpu)` (77 pass; `tests/nav`: 445 pass, 14 skipped - 9 of those are the world-generator tests that need the Majadroid asset pack, which was deleted from the repo in commit `646071c`).
 * A float32 tier compared with a Python `0.3` is `False` for a scalar (True for an array): compare scalars with `pytest.approx`.
 * A ramp test without a plateau tests the fall, not the climb.
 * Ray-marched hits must be snapped to the surface, or the simulated map has a -2 cm bias.
 * The 5 x 5 plane fit must be gated to the centre's surface (section 3, item 1) or walls get twice the lethal band.
 
-## 8. Next: update the classes from the UGV's own 3D data (user idea, 2026-10-27)
+## 8. The UGV's own 3D data (user idea, 2026-10-27): first offline evidence
 Design agreed in the discussion: one classifier, two data sources; every cell keeps class + confidence + source; a UGV observation
 overrides the UAV prior only where its confidence is higher; hysteresis so classes do not flicker; re-plan only when the next 10-15 m of the
-path is affected (event-driven, not a timer). Finding while planning it: the elevation node already has a `secondary_points_topic`
-(a second sensor's cloud fused into the same map), and the variance model makes a close UGV observation (`0.01 * 2^2`) weigh ~9x a
-6 m UAV one, so fusing the UGV depth camera cloud into the same map is the cheapest first step and v2 reclassifies it incrementally.
-What a 2.5D cell cannot hold - the floor UNDER a roof, vertical faces, overhead clearance - needs a separate `ground` layer (lowest
-supporting surface) and a `clearance` layer from the UGV's points: the real 3D part. Sensor caveat: the Jackal has a 2D lidar and a
-front depth camera only; a single scan plane gives almost no ground information.
+path is affected (event-driven, not a timer). `scan_sim.ugv_pass` simulates the Jackal's front camera (the real model's: 34 deg down, 0.1-8 m,
+so the floor is seen only ~0.1-0.9 m ahead: a ~1 m strip along the route) and fuses it with the same `fuse_points`.
+
+**X-C3** (`eval_refine.py`, UAV scan -> A* route -> UGV drives it, UGV cloud fused into the SAME map, noise 0.02 + 0.0005 r^2): on the cells the UGV measured the
+agreement with the truth rises 95.3 % -> 99.9 % *without* noise compensation; with the compensation of 4b the UAV-only map is already at
+99.7 % (W2), 96.3 % (W3), 99.8 % (W5) there and the UGV lifts it to 100 / 96.7 / 100 %. Over the whole map nothing changes (the strip is 1 m wide).
+So after 4b, refining the cells the UAV already saw is a small gain; the remaining W3 misses are map-representation effects (a cell holds the
+MEAN of its points, a rubble bump of +-9 cm on a 0.5 m lattice is not the cell-centre height the truth uses), which no rule fixes.
+
+**X-C4** (`eval_ground.py`, W4: the floor view is the truth the UGV drives on; the UAV view has the decks): routes to the five feasible goals,
+ground layer = a separate map fed only by the UGV camera. On 8816 cells the UGV measured, the ground layer is 100 % correct; the UAV map is
+99.2 % (98.8 % under roofs). **902 cells have no UAV opinion at all (573 of them under a roof) and the ground layer classifies them 100 %
+correctly.** No floor-lethal cell under a roof was called walkable by the UAV map on these routes (the planner's routes avoid walls, so the strip rarely
+contains one) - so the measurable gain of a ground layer on a driven route is *new knowledge* (unobserved -> known), not corrections.
+
+**Conclusion and what is NOT built.** The accuracy gains came from the rules (sections 3-4b), not from the UGV data; the UGV refinement is worth
+having for unobserved/occluded cells (and the near-range noise), but it needs the `ground` layer in the node (a second map fed by
+`/ugv/camera/points` with a gate on height, the combination `where(ground_valid, ground_tier, uav_tier)`, and the planner re-plan trigger);
+that is the next step and is NOT implemented live. Note `tunnel_demo.launch.py` currently disables the UGV cloud in the elevation map when
+`overhead_islands:=true` (a UGV cloud fused into the SAME 2.5D cell would fight with the deck height) - a separate ground map avoids that conflict.
+Sensor caveat: a camera 34 deg down sees a 1 m strip; a 3D lidar or a less tilted camera would see much more.

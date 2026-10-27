@@ -56,3 +56,27 @@ def test_classifier_sees_the_box_in_the_scan(world):
     assert np.all(r.tier[103:107, 45:55] == EASY)             # the box top: flat
     assert np.all(r.tier[99:101, 45:55] == LETHAL)            # its south face: a 40 cm step
     assert np.mean(r.tier[ok & (h == 0)][::7] == EASY) > 0.97
+
+
+# ------------------------------------------------------------------------------------------------ UGV pass (step 11b)
+from emap.elevation_map import ElevationMap
+from emap.scan_sim import drive_poses, ugv_pass
+
+
+def test_drive_poses_follow_the_polyline_and_face_along_it():
+    poses = drive_poses([(0, 0), (2, 0), (2, 2)], spacing=0.5)
+    assert len(poses) == 8 and poses[0] == pytest.approx((0, 0, 0)) and poses[-1][2] == pytest.approx(np.pi / 2)
+    assert all(abs(p[0] - 2.0) < 1e-9 for p in poses[4:])                  # the second leg runs along x = 2
+
+
+def test_ugv_camera_measures_the_floor_just_ahead_and_a_step_in_front():
+    h = np.zeros((160, 160))
+    h[:, 100:] = 0.1                                                       # a 10 cm step at x = +2 (cell 100 -> x = -8 + 10)
+    emap = ElevationMap(RES, 16.0, 10.0)
+    ugv_pass(emap, h, RES, -8.0, -8.0, drive_poses([(-2.0, 0.0), (1.6, 0.0)], spacing=0.4), noise_a=0.002)
+    ok = emap.layer("is_valid") > 0.5
+    e = emap.layer("elevation")
+    assert ok[75:85, 60:95].sum() > 100                                    # a strip along the route is observed ...
+    assert not ok[:40].any() and not ok[120:].any()                        # ... and only there (1 m wide, ahead of the robot)
+    assert abs(np.median(e[ok & (h == 0)])) < 0.01 and abs(np.median(e[ok & (h > 0)]) - 0.1) < 0.01
+    assert np.median(emap.layer("variance")[ok]) < 0.02                    # close range: ~100x more certain than a 4-7 m UAV look

@@ -50,11 +50,13 @@ no handling of negative obstacles (holes, trench edges) beyond the step threshol
   update); on simulated real scans 97.6-100 % agreement with the truth classification (old default: 2.5-15 %), 0.0-0.1 % false-lethal, routes equal
   to the truth routes; step limit measured with the Jackal model: 9 cm crossed / 10 cm blocked -> `max_step` 0.09 (was 0.15); slope: all ramps up
   to 35 deg crossed (limit kept at 0.35 as a policy margin). Known limitation: the rim of the observed area (needs C-06).
-* [ ] **C-06 3D refinement of the classes from the UGV's own data (user idea, 2026-10-27).** One classifier, two data sources; class + confidence +
+* [~] **C-06 3D refinement of the classes from the UGV's own data (user idea, 2026-10-27).** One classifier, two data sources; class + confidence +
   source per cell; UGV overrides the UAV prior where more confident; hysteresis; re-plan only when the next 10-15 m of the path is affected.
   First step: fuse the UGV depth-camera cloud into the same map through the node's `secondary_points_topic` (v2 reclassifies incrementally),
   then a `ground` layer (floor under a roof) + `clearance` layer from the UGV's points. Evaluate prior vs refined against the W1-W5 truth maps.
-  Sensor caveat: the Jackal has a 2D lidar + front depth camera only. See `step11` section 8.
+  Sensor caveat: the Jackal has a 2D lidar + front depth camera only. See `step11` section 8. **Offline evidence done (X-C3/X-C4): a separate ground layer
+  classifies 100 % correctly the cells the UAV never saw (902 on W4, 573 under roofs); on cells the UAV already saw the gain is small after the noise
+  compensation. Open: the `ground` map in the node + the combination rule + the event-driven re-plan, then a live run.**
 * [ ] **C-07 Measure the roughness limit on the vehicle** (drive W3's rubble field / ruts; `max_roughness_m` 0.06 is a guess) and the slope limit
   on low-friction ground (needs C-02 friction patches). Also regenerate the world maps (`maps/*.npz`, `scene.py` ground truth) with v2.
 * [ ] **C-02 Terrain-test worlds with ground types.** Add visual + friction/softness differences to the worlds (gravel, mud/soft

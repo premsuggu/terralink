@@ -22,7 +22,7 @@ Pure NumPy/SciPy, no ROS: runs in the unit tests and in the offline evaluation (
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 from scipy.ndimage import correlate
@@ -45,6 +45,8 @@ class TerrainParams:
     surface_gate: float = 0.30       # m; plane-fit cells further than this from the centre height are another surface
     min_plane_cells: int = 8         # observed cells needed in the plane window, else slope/roughness are unknown
     var_ref: float = 0.1             # m^2; cell variance at which the measurement confidence is 0.5
+    noise_sigma: float = 0.0         # m; height noise of the scan (see estimate_noise_sigma); 0 = no compensation
+    noise_strength: float = 1.0      # how much of the expected noise reading is subtracted in the DIFFICULT zone (never for LETHAL)
 
 
 @dataclass
@@ -157,6 +159,15 @@ def analyze_terrain(elevation: np.ndarray, variance: np.ndarray, is_valid: np.nd
     confidence = np.where(observed, coverage * meas, 0.0)
 
     hazard = np.maximum.reduce([slope / p.max_slope, step / p.max_step, rough / p.max_roughness])
+    if p.noise_sigma > 0:
+        # NOISE COMPENSATION, soft zone only. On flat ground with height noise sigma the plane fit reads slope ~1.77*sigma,
+        # the robust 3x3 step ~1.85*sigma and the residual ~sigma; subtracting that keeps noisy flat cells EASY instead of
+        # DIFFICULT. The LETHAL decision (raw hazard > 1) is untouched: a real 9-10 cm ledge must stay lethal at any noise.
+        sg, k = p.noise_sigma, p.noise_strength
+        soft = np.maximum.reduce([np.maximum(slope - 1.77 * sg * k, 0) / p.max_slope,
+                                  np.maximum(step - 1.85 * sg * k, 0) / p.max_step,
+                                  np.sqrt(np.maximum(rough**2 - (sg * k) ** 2, 0)) / p.max_roughness])
+        hazard = np.where(hazard > 1.0, hazard, np.minimum(hazard, soft))
     # An observed cell without enough same-surface neighbours (an isolated wall-top fragment, the rim of a hole) has no slope or
     # roughness evidence: it is NOT assumed flat. The old classifier got this right by accident (the unobserved neighbour's
     # placeholder height 0.0 made a cliff); now it is explicit: hazard 1.0 = at the limit, i.e. LETHAL, until more is seen.
@@ -167,6 +178,14 @@ def analyze_terrain(elevation: np.ndarray, variance: np.ndarray, is_valid: np.nd
     tier[hazard > 1.0] = LETHAL
     tier[~observed] = EASY
     return TerrainAnalysis(slope, step, rough, confidence, hazard, tier, known)
+
+
+def estimate_noise_sigma(analysis: "TerrainAnalysis", cap: float = 0.05) -> float:
+    """Height noise of a scan, estimated from the map itself: the median plane-fit residual of the cells that are observed and
+    well supported. Most cells of a site are flat ground, so the median is the noise, not the terrain (rubble and walls sit in
+    the tail). Capped: a map that really is rough everywhere must not be "compensated" into looking smooth."""
+    r = analysis.roughness[analysis.known]
+    return float(min(np.median(r), cap)) if r.size else 0.0
 
 
 class IncrementalTerrain:
@@ -182,9 +201,15 @@ class IncrementalTerrain:
     every cell each time, so it falls back to a full recompute by itself.
     """
 
-    def __init__(self, resolution: float, params: TerrainParams = TerrainParams()):
+    def __init__(self, resolution: float, params: TerrainParams = TerrainParams(), auto_noise: bool = False,
+                 recalibrate_every: int = 20):
+        """`auto_noise`: every `recalibrate_every` updates re-estimate the scan's height noise from the map (`estimate_noise_sigma`)
+        and, when it moved by more than 20 % (or 1 mm), switch the compensation to the new value and recompute everything once."""
         self.res = resolution
         self.params = params
+        self.auto_noise = auto_noise
+        self._every = max(1, recalibrate_every)
+        self._calls = 0
         self.reach = max(int(round(params.plane_window_m / resolution)) | 1, 3) // 2 + 0
         self.reach = max(self.reach, params.step_window_cells // 2)
         self._prev: tuple[np.ndarray, np.ndarray, np.ndarray] | None = None
@@ -214,4 +239,10 @@ class IncrementalTerrain:
                 for name in ("slope", "step", "roughness", "confidence", "hazard", "tier", "known"):
                     getattr(self.result, name)[o0:o1, c0:c1] = getattr(sub, name)[a:b, c:d]
         self._prev = (e.copy(), v.copy(), m.copy())
+        self._calls += 1
+        if self.auto_noise and (self._calls == 1 or self._calls % self._every == 0):
+            sg = estimate_noise_sigma(self.result)
+            if abs(sg - self.params.noise_sigma) > max(0.001, 0.2 * self.params.noise_sigma):
+                self.params = replace(self.params, noise_sigma=sg)
+                self.result = analyze_terrain(e, v, m, self.res, self.params)
         return self.result

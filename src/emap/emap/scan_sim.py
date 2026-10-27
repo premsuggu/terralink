@@ -96,3 +96,55 @@ def scan(height: np.ndarray, res: float, x0: float, y0: float, poses, altitude: 
         pts[:, 2] += rng.normal(0.0, noise_a + noise_b * rng_m**2)
         fuse_points(emap, pts, origin, **FUSION)
     return emap
+
+
+# ------------------------------------------------------------------------------------------------ UGV pass (step 11b)
+# models/nav_ugv/model.sdf: front_camera_link at (0.27, 0, 0.155) in the model frame, pitched 0.6 rad DOWN, rgbd 320 x 240,
+# horizontal FOV 1.047, clip 0.1-8 m. Looking 34 deg down from 0.155 m it sees the floor only ~0.1-0.9 m ahead (plus anything taller).
+UGV_CAM_OFFSET, UGV_CAM_HEIGHT, UGV_CAM_PITCH, UGV_FAR = 0.27, 0.155, 0.6, 8.0
+
+
+def drive_poses(path_xy, spacing: float = 0.4):
+    """(x, y, yaw) every `spacing` metres along a polyline (the route the UGV drives, facing along it)."""
+    pts = np.asarray(path_xy, float)
+    out = []
+    for p, q in zip(pts[:-1], pts[1:]):
+        seg = q - p
+        L = float(np.hypot(*seg))
+        if L < 1e-9:
+            continue
+        yaw = float(np.arctan2(seg[1], seg[0]))
+        for s in np.arange(0.0, L, spacing):
+            out.append((p[0] + seg[0] * s / L, p[1] + seg[1] * s / L, yaw))
+    return out
+
+
+def ugv_pass(emap: ElevationMap, height: np.ndarray, res: float, x0: float, y0: float, poses, *, noise_a: float = 0.002,
+             noise_b: float = 0.0, seed: int = 1, stride: int = 2) -> None:
+    """Drive `poses` (x, y, yaw) over the true height field and fuse the front depth camera's cloud into `emap` (in place) with the
+    same `fuse_points` and parameters the node uses for its secondary sensor. Camera = the Jackal's (see the constants above)."""
+    rng = np.random.default_rng(seed)
+    f = (IMG_W / 2) / np.tan(HFOV / 2)
+    u = (np.arange(0, IMG_W, stride) + 0.5 - IMG_W / 2) / f
+    v = (np.arange(0, IMG_H, stride) + 0.5 - IMG_H / 2) / f
+    uu, vv = np.meshgrid(u, v)
+    d_cam = np.stack([np.ones(uu.size), -uu.ravel(), -vv.ravel()], 1)       # forward, left, up (u right, v down in the image)
+    d_cam /= np.linalg.norm(d_cam, axis=1, keepdims=True)
+    cp, sp = np.cos(UGV_CAM_PITCH), np.sin(UGV_CAM_PITCH)
+    d_body = np.stack([cp * d_cam[:, 0] + sp * d_cam[:, 2], d_cam[:, 1], -sp * d_cam[:, 0] + cp * d_cam[:, 2]], 1)   # pitch DOWN about +y
+    ny, nx = height.shape
+    for (px, py, yaw) in poses:
+        c, s = np.cos(yaw), np.sin(yaw)
+        r0 = int(round((py - y0) / res)); c0 = int(round((px - x0) / res))
+        if not (0 <= r0 < ny and 0 <= c0 < nx):
+            continue
+        ground = height[r0, c0]
+        origin = np.array([px + c * UGV_CAM_OFFSET, py + s * UGV_CAM_OFFSET, ground + UGV_CAM_HEIGHT])
+        d = np.stack([c * d_body[:, 0] - s * d_body[:, 1], s * d_body[:, 0] + c * d_body[:, 1], d_body[:, 2]], 1)
+        pts, ok = _cast(height, res, x0, y0, origin, d, UGV_FAR, res / 4.0)
+        if not ok.any():
+            continue
+        pts = pts[ok]
+        rng_m = np.linalg.norm(pts - origin, axis=1)
+        pts[:, 2] += rng.normal(0.0, noise_a + noise_b * rng_m**2)
+        fuse_points(emap, pts, origin, **FUSION)

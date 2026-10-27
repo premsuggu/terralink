@@ -130,6 +130,7 @@ class ElevationMappingNode(Node):
         # "v1" = the old variance-as-roughness classifier.
         self.declare_parameter("terrain_classifier", "v2")
         self.declare_parameter("max_step_v2", 0.09)       # v2: step height (m) the vehicle cannot cross (measured, X-A1; v1 keeps `max_step`)
+        self.declare_parameter("terrain_auto_noise", True)  # v2: estimate the scan's height noise from the map and compensate (DIFFICULT zone only)
         self.declare_parameter("max_roughness_m", 0.06)   # v2: residual std (m) around the local plane at which a cell is lethal
         self.declare_parameter("use_gpu_fusion", True)
         self.declare_parameter("enable_drift_compensation", True)
@@ -228,8 +229,10 @@ class ElevationMappingNode(Node):
         # v2 analysis state: the persistent map is analysed INCREMENTALLY (only the cells a cloud changed, ~1 ms instead of
         # 0.2 s); the rolling map re-centres every callback (nearly every cell "changes"), so it is re-analysed from
         # `_publish_maps` at a lower rate instead of per cloud.
-        self._global_terrain = IncrementalTerrain(resolution, self._terrain_params)
-        self._local_terrain = IncrementalTerrain(resolution, self._terrain_params)
+        self._global_terrain = IncrementalTerrain(resolution, self._terrain_params,
+                                                  auto_noise=bool(self.get_parameter("terrain_auto_noise").value))
+        self._local_terrain = IncrementalTerrain(resolution, self._terrain_params,
+                                                  auto_noise=bool(self.get_parameter("terrain_auto_noise").value))
         self._local_dirty = False
         self._publish_count = 0
         # The persistent map: constructed the same way, but move_to is never
