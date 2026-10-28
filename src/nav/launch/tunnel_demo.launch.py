@@ -107,6 +107,7 @@ def generate_launch_description():
     patrol_file_arg = DeclareLaunchArgument('patrol_file', default_value='', description="UAV patrol: file name in share/nav/worlds with one 'x y z' hover point per line (written by build_world.py as <world>_patrol.txt). Empty = the tunnel world's built-in patrol.")
     global_map_length_arg = DeclareLaunchArgument('global_map_length', default_value='40.0', description='Side of emap\'s persistent global map [m]; must cover the whole world (the stress worlds are up to 120 m).')
     drift_comp_arg = DeclareLaunchArgument('drift_compensation', default_value='true', description="emap's z-drift compensation. In simulation the UAV pose is ground truth, and on long patrols the compensation itself was found to drift the map by ~0.3 m (stress world W4) - set false there.")
+    island_strategy_arg = DeclareLaunchArgument('island_strategy', default_value='viewpoints', description="With overhead_islands: how to plan to a goal under a roof. 'viewpoints' = frontier viewpoint exploration (original); 'freespace' = plan straight to the goal as if the unobserved interior were open, re-plan as the lidar reveals walls (nav/freespace.py, step12 doc).")
     overhead_arg = DeclareLaunchArgument('overhead_islands', default_value='false', description="Goals under/inside roofs and decks the UAV only saw the top of: plan with the island treated as unknown and filled in by the UGV's own camera (nav/overhead.py). Starts floor_map_node and stops emap fusing the UGV camera into the UAV map (the two would conflict under a roof).")
     emap_stride_arg = DeclareLaunchArgument('emap_point_stride', default_value='4', description="Keep 1 point in N of the UAV depth cloud in elevation_mapping_node. The CPU fusion cost scales with it: at 6 m altitude even N=16 leaves ~700 points per m^2 (the map has 100 cells per m^2). N=4 made the W4 scan run at ~0.25x real time.")
     ground_arg = DeclareLaunchArgument('ground_layer', default_value='false', description="emap: fuse the UGV depth camera into a SEPARATE ground map (classified by the same rules, published as ground_* layers; the planner lets it override the UAV class where it has data) instead of into the UAV map. Also enables the UGV cloud when overhead_islands is true. See step11 doc, sections 8-9.")
@@ -391,6 +392,7 @@ def generate_launch_description():
             'viewpoint_standoff_m': ParameterValue(LaunchConfiguration('viewpoint_standoff_m'), value_type=float),
             'viewpoint_block_m': ParameterValue(LaunchConfiguration('viewpoint_block_m'), value_type=float),
             'enable_overhead_islands': ParameterValue(LaunchConfiguration('overhead_islands'), value_type=bool),
+            'island_strategy': LaunchConfiguration('island_strategy'),
             # ParameterValue(value_type=float): `anomaly_hold_sec:=30` would otherwise reach
             # the node as an INTEGER and be rejected (it declares a double), killing planner_node.
             'anomaly_hold_sec': ParameterValue(LaunchConfiguration('anomaly_hold_sec'), value_type=float),
@@ -551,7 +553,7 @@ def generate_launch_description():
         rough_arg,
         ground_arg,
         emap_stride_arg,
-        overhead_arg,
+        overhead_arg, island_strategy_arg,
         drift_comp_arg,
         uav_speed_arg,
         follower_delay_arg,

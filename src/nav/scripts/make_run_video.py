@@ -109,6 +109,7 @@ def main(argv=None) -> int:
     ap.add_argument("--map", default="uavview", help="map variant the planner was given (uavview | groundtruth)")
     ap.add_argument("--title", default=None)
     ap.add_argument("--hold", type=float, default=3.0, help="seconds to hold the last frame")
+    ap.add_argument("--speed", type=float, default=1.0, help="playback speed-up (4 = a 900 s run plays in 225 s; the on-screen clock stays in simulated seconds)")
     ap.add_argument("--fps", type=int, default=FPS, help="output frame rate (10 halves the composing time of a long run; playback speed stays exact)")
     a = ap.parse_args(argv)
     run = Path(a.run)
@@ -170,7 +171,7 @@ def main(argv=None) -> int:
 
     fps = a.fps
     t_first, t_last = max(pt[0], vt[0]), pt[-1]
-    n_frames = int((t_last - t_first) * fps) + 1 + int(a.hold * fps)
+    n_frames = int((t_last - t_first) / a.speed * fps) + 1 + int(a.hold * fps)
     W, H = MAIN + COLW, MAIN
     vw = None
     for fourcc in ("avc1", "mp4v"):
@@ -183,7 +184,7 @@ def main(argv=None) -> int:
     zoom, crop_m = 1.8, 14.0
     title = a.title or a.world
     for k in range(n_frames):
-        t = min(t_first + k / fps, t_last)
+        t = min(t_first + k * a.speed / fps, t_last)
         x, y, yaw = pose_at(t)
         ti = int(np.searchsorted(pt, t))
         canvas = np.zeros((H, W, 3), np.uint8)
@@ -206,7 +207,7 @@ def main(argv=None) -> int:
         def label(img, text, org, scale=0.6):
             cv2.putText(img, text, org, cv2.FONT_HERSHEY_SIMPLEX, scale, (0, 0, 0), 4, cv2.LINE_AA)
             cv2.putText(img, text, org, cv2.FONT_HERSHEY_SIMPLEX, scale, (255, 255, 255), 1, cv2.LINE_AA)
-        label(canvas, title, (14, 26), 0.7)
+        label(canvas, title + (f"   (x{a.speed:g} speed)" if a.speed != 1.0 else ""), (14, 26), 0.7)
         d_now = float(np.interp(t, pt, dist))
         if plans:
             k = int(np.searchsorted(plan_times, t, side="right")) - 1

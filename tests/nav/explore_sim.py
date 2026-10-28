@@ -55,7 +55,8 @@ class SimResult:
 class ExploreSim:
     def __init__(self, base: MapSnapshot, truth: MapSnapshot, start, goal, *, robot_radius=0.22,
                  cone_range_m=12.0, cone_half_deg=180.0, around_m=12.0, speed=0.5, replan_every_m=2.0,
-                 frontier_min_width_m=0.44, use_island=True, standoff_m=0.8, block_m=3.0, plan_overhead_s=10.0, waive_m=0.5, body_radius=0.27):
+                 frontier_min_width_m=0.44, use_island=True, standoff_m=0.8, block_m=3.0, plan_overhead_s=10.0, waive_m=0.5, body_radius=0.27,
+                 policy=None, overhead_on_switch_only=False, ground_layer=False, cam_range_m=8.0, cam_half_deg=30.0):
         self.base, self.start, self.goal = base, tuple(start), tuple(goal)
         self.res = base.resolution
         self.t_trav = resample(truth.layers["traversability"], truth, base, 0.0)           # outside the truth map = wall
@@ -71,6 +72,21 @@ class ExploreSim:
         self.frontier_min_width_m = frontier_min_width_m
         self.gp = GlobalPlanner(PlannerParams(uncertain_waive_m=waive_m), enable_memory=True, enable_exploration=True, stuck_feedback=True, viewpoint_standoff_m=standoff_m, viewpoint_block_m=block_m)   # as the live mission runs it
         self.planner = GoalIslandPlanner(self.gp) if use_island else None
+        # `policy`: any object with GoalIslandPlanner's `plan(layers, floor_layers, make_ctx, start, goal, res, cx, cy, now)`
+        # and a `note` string - used to compare other exploration strategies (src/nav/scripts/eval_exploration.py) against
+        # ours under identical sensing and motion.
+        if policy is not None:
+            self.planner = policy
+        # Live, the ~10 s overhead is paid when the robot gets a NEW goal (stop, turn, accelerate). A re-plan toward the
+        # same target (Nav2 re-plans every second without stopping) costs nothing; True charges only real target switches.
+        self.overhead_on_switch_only = overhead_on_switch_only
+        # The UGV GROUND LAYER (emap `ground_layer:=true`, nav/ground_layer.py): the front depth camera's own map of the floor,
+        # which WINS over the UAV map wherever it has an observation. Modelled as: cells in the camera's cone (+-30 deg, 8 m,
+        # line of sight) take their TRUE class - offline the v2 classifier on the UGV camera was 100 % correct on W4 (step11
+        # doc, X-C4). Without it the simulator cannot correct a false UAV obstacle outside a hidden island (the floor lidar
+        # only fills cells the UAV never observed), which the live stack does.
+        self.ground_layer, self.cam_range, self.cam_half = ground_layer, cam_range_m, math.radians(cam_half_deg)
+        self.cam_seen = np.zeros(base.shape, bool)
 
     # ----------------------------------------------------------------- geometry
     def cell(self, x, y):
@@ -87,6 +103,7 @@ class ExploreSim:
         # A wall closer than the lidar's 0.3 m minimum range gives NO return (the sensor is blind there): keep the 13.0 marker.
         alive = np.ones(len(angs), bool)
         bearing = yaw + angs
+        in_cam = np.abs(angs) <= self.cam_half                            # rays inside the front camera's cone (angs are robot-relative)
         for s_ in np.arange(0.3, 12.0, self.res * 0.5):
             r = np.round((y + s_ * np.sin(bearing) - self.base.center_y) / self.res + n_r / 2).astype(int)
             c = np.round((x + s_ * np.cos(bearing) - self.base.center_x) / self.res + n_c / 2).astype(int)
@@ -94,6 +111,9 @@ class ExploreSim:
             blocked = np.zeros(len(angs), bool)
             blocked[inside] = self.lethal[r[inside], c[inside]]
             blocked |= ~inside
+            if self.ground_layer and s_ <= self.cam_range:
+                cam = alive & in_cam & inside                             # the camera sees up to and including the first wall
+                self.cam_seen[r[cam], c[cam]] = True
             newly = alive & blocked
             ranges[newly] = s_ if s_ > 0.3 + 1e-9 else -np.inf       # blocked at the very first sample = inside the 0.3 m blind zone
             alive &= ~blocked
@@ -144,16 +164,26 @@ class ExploreSim:
             self.look(x, y, yaw)
             plans += 1
             layers = {k: np.array(v, copy=True) for k, v in self.base.layers.items()}
+            if self.ground_layer:
+                layers.update(ground_valid=self.cam_seen.astype(np.float32), ground_traversability=self.t_trav.astype(np.float32),
+                              ground_elevation=self.t_elev.astype(np.float32))
+                # Not combined here: like planner_node, the island rule sees the UAV layers alone and build_masks (inside
+                # make_ctx) applies combine_ground to the composed map.
             if self.planner is not None:
                 r = self.planner.plan(layers, self.floor_layers(), self.make_ctx, (x, y), self.goal,
                                       self.res, self.base.center_x, self.base.center_y, now=t)
-                note = self.planner.note + "; " + self.gp.last_note
+                inner = getattr(self.planner, 'planner', None)
+                note = self.planner.note + ("; " + inner.last_note if inner is not None else "")
             else:
                 r = self.gp.plan(self.make_ctx(layers), (x, y), self.goal, now=t)
                 note = self.gp.last_note
             res.notes.append(note)
             self.last_plan = r
-            t += self.plan_overhead_s
+            new_target = r.waypoints[-1] if r.valid and r.waypoints else None
+            prev_target = getattr(self, '_prev_target', None)
+            if not self.overhead_on_switch_only or new_target is None or prev_target is None or math.dist(new_target, prev_target) > 1.0:
+                t += self.plan_overhead_s
+            self._prev_target = new_target
             if r.valid and r.waypoints:
                 res.targets.append((plans, round(r.waypoints[-1][0], 1), round(r.waypoints[-1][1], 1),
                                     str(r.exploration_kind) if getattr(r, 'is_exploration', False) else 'goal'))
@@ -188,7 +218,10 @@ class ExploreSim:
                 if blocked or moved >= self.replan_every:
                     break
             if moved == 0.0:                                # boxed in on the first step: let the map update and re-plan
-                t += 2.0
+                # A failed attempt costs real time live (Nav2 tries, then its recovery behaviours). With overhead charged
+                # only on target switches, 2 s per failed plan would end the run (8 plans, `_same_spot`) before the planner's
+                # 18 s stuck detector could ever fire - an artefact of the simulator, not a planner failure.
+                t += self.plan_overhead_s if self.overhead_on_switch_only else 2.0
         res.travelled_m, res.plans, res.seconds = travelled, plans, t
         if math.dist((x, y), self.goal) < 0.6:
             res.reached = True

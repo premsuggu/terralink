@@ -43,3 +43,19 @@ def test_planner_masks_use_the_ground_layer():
     masks = build_masks(MapSnapshot(layers=layers, resolution=0.1, center_x=0.0, center_y=0.0))
     assert masks.walkable[3, 4:7].all() and not masks.walkable[2, 4:7].any()
     assert not masks.walkable[5, 1] and masks.walkable[5, 2]
+
+
+def test_low_confidence_ground_cells_do_not_override_the_uav_map():
+    """Live W4 (2026-10-28): 1-3 cell LETHAL specks with confidence ~0.06 sealed doors. Below MIN_CONFIDENCE the UAV's class stays."""
+    from nav.ground_layer import MIN_CONFIDENCE
+    layers = _layers()
+    layers["ground_valid"] = np.ones((6, 6), np.float32)
+    layers["ground_elevation"] = np.zeros((6, 6), np.float32)
+    layers["ground_traversability"] = np.full((6, 6), LETHAL, np.float32)
+    conf = np.full((6, 6), MIN_CONFIDENCE + 0.1, np.float32)
+    conf[2, 2] = 0.05                                                 # a speck seen once from far away
+    layers["ground_confidence"] = conf
+    out = combine_ground(layers)
+    assert out["traversability"][2, 2] == EASY and out["elevation"][2, 2] == np.float32(3.5)    # the UAV's reading kept
+    assert out["traversability"][0, 0] == LETHAL                                               # confident: the ground layer wins
+    assert combine_ground(layers, min_confidence=0.0)["traversability"][2, 2] == LETHAL        # the gate can be switched off

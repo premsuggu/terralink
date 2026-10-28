@@ -112,3 +112,35 @@ def test_planner_hides_the_island_for_the_goal_and_also_when_the_robot_is_on_it(
     assert fake.seen["is_valid"][70, 70] == 0 and "robot is on" in gp.note
     gp.plan(lay, None, ctx_of, xy(20, 20), xy(180, 20), RES, 0.0, 0.0)        # neither
     assert fake.seen["is_valid"][70, 70] == 1 and "ordinary" in gp.note
+
+
+def _with_ground_under_deck(lay):
+    """The UGV camera looked in through a door: a strip of floor UNDER the deck (and the door in the ring) is in the ground layer."""
+    gv = np.zeros((N, N), np.float32)
+    gv[96:104, 40:90] = 1.0                                                   # from outside, across the ring, 2.8 m into the building
+    return dict(lay, ground_valid=gv, ground_traversability=np.ones((N, N), np.float32),
+                ground_elevation=np.zeros((N, N), np.float32))
+
+
+def test_ground_layer_merged_first_would_hide_the_island():
+    """Why planner_node hands the island rule the UAV layers ALONE (bug found in the live W4 run, 2026-10-27): merged first, the floor
+    seen under the deck joins the deck to the ground around it and the roof is no longer an island."""
+    from nav.ground_layer import combine_ground
+    lay = _with_ground_under_deck(_world())
+    merged = combine_ground(lay)
+    assert goal_island_zone(merged["elevation"], _walkable(merged), RES, 0.0, 0.0, xy(100, 100)) is None
+    assert goal_island_zone(lay["elevation"], _walkable(lay), RES, 0.0, 0.0, xy(100, 100)) is not None
+
+
+def test_island_planner_with_ground_layer_hides_the_island_and_still_uses_the_ground_layer():
+    """UAV layers + ground_* keys in: the island is hidden, and make_ctx's build_masks (combine_ground) then puts back what the
+    camera saw - the interior strip is walkable, the rest of the island unknown."""
+    from nav.replay import MapSnapshot, build_masks
+    lay = _with_ground_under_deck(_world())
+    fake = _FakePlanner()
+    gp = GoalIslandPlanner(fake)
+    ctx_of = lambda layers, use_anomaly=True: build_masks(MapSnapshot(layers=layers, resolution=RES, center_x=0.0, center_y=0.0))
+    gp.plan(lay, None, ctx_of, xy(100, 20), xy(100, 100), RES, 0.0, 0.0)
+    assert "goal is on" in gp.note
+    assert fake.seen.walkable[100, 80] and not fake.seen.unobserved[100, 80]     # seen by the camera under the deck
+    assert fake.seen.unobserved[100, 120]                                        # never seen: unknown, not the deck's flat top

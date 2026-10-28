@@ -89,16 +89,23 @@ the primary mission. So: **reuse a standard explorer; keep our hidden-island cod
 **Lessons for us:** commit to a target/branch (STGPlanner/TARE); plan one tour over all frontiers rather than re-picking one block;
 use the lidar's 12 m (longer legs); treat a Nav2 failure as map information; none of them has our "roof looks like floor" problem.
 
-* [ ] **EX-01 Try `m-explore-ros2` (explore_lite) on our worlds as the baseline** (needs slam_toolbox + a 2D lidar map; ROS 2 Humble;
-  an hour of integration). Question: does it explore the W4 rooms by itself, and how long does it take vs. our own planner?
-* [ ] **EX-02 Check whether TARE has a ROS 2 / Humble branch and whether it runs on our UGV** (needs a 3D lidar or at least a
-  registered scan + terrain analysis; our UGV has a 2D lidar). If not, EX-03.
-* [ ] **EX-03 Add the three fixes from the loop-analysis into our own planner (only if EX-01/02 fail):** commitment to a target
-  until reached or declared unreachable; mark a gap closed after a Nav2 failure; longer legs. Reproduce each in
-  `tests/nav/explore_sim.py` first (a live W4 mission is ~40 min).
+**2026-10-27: X-E1 done offline - see `docs/work-docs/nav/step12_exploration.md`.** Winner: the FREESPACE ASSUMPTION (D* Lite /
+Nav2 `allow_unknown`, unknown cost 1) - W4 real scan: all feasible goals, 0 target switches, B in 99 m (ours: not reached),
+sealed C given up at 113 m. explore_lite lost (B 284 m / 41 switches; stalls on a single big frontier). Also found and FIXED: the
+ground layer switched off the hidden-island rule (`planner_node` merged it first; live W4 log: 29 of 31 decisions "ordinary ground").
+* [x] **EX-01 explore_lite** - its decision rule ported and compared offline (`tests/nav/explore_policies.py`); clearly worse than
+  freespace and than ours on W4 (goal-free, centroid targets). Live package run not recommended (ask the user).
+* [x] **EX-02 TARE** - has a ROS 2 Humble/Jazzy branch, but runs inside CMU's own stack on registered 3D scans and is goal-free
+  coverage exploration: not tested (would replace Nav2 + our map; our UGV has a 2D lidar).
+* [x] **EX-03 Adopt freespace planning under roofs** - done 2026-10-28: `nav/freespace.py`, `island_strategy:=freespace` (default
+  still `viewpoints`), ground-layer confidence gate (`nav/ground_layer.py`, 0.15). Offline: W4 real scan, B in 98 m, 0 switches.
+  **Live: 2 runs, room B NOT reached** (71 m stuck / 443 m, reached the room next to B in 300 s): the camera ground layer's false
+  obstacles (flying pixels at door jambs) closed B's 1.0 m door. step12 section 7; videos `media/runs/w4_structure_decks_mission_freespace_*.mp4`.
+* [ ] **EX-05 Flying-pixel filter on the UGV depth image** (drop points at depth discontinuities before fusing the ground layer,
+  like PCL's ShadowPoints), then ONE live W4-B run. Awaiting approval.
 * [ ] **EX-04 STGPlanner skeleton idea on our 2D floor map** (corridors/doors): read its code, decide port vs. reimplement.
-* Experiment **X-E1:** W4 goals A, B, D, E, F (+ C must fail) with: our planner / explore_lite / (TARE if available).
-  Metrics: reached, time, distance, number of Nav2 failures. Cap: 30 sim-minutes per run.
+* Experiment **X-E1 (done offline, step12):** W4 goals A-F, both maps, ground layer on/off, + W1/W2/W3/W5 regression:
+  ours / freespace (cost 1, 2, 5) / island-only freespace / explore_lite (`src/nav/scripts/eval_exploration.py`).
 
 ## 4. Navigation and the vehicle
 * [x] **N-00 Realistic UGV model** (Jackal-class, 4-wheel skid-steer) - `step10`.

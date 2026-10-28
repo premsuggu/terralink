@@ -453,3 +453,40 @@ class TestPlanTraceTopic:
         a = _poses(node._get_plan_callback(_request(_xy(10, 10), _xy(45, 40)), GetPlan.Response()))
         b = _poses(node._get_plan_callback(_request(_xy(10, 10), _xy(45, 40)), GetPlan.Response()))
         assert a == b and len(node.published["trace"]) == 2
+
+
+class TestGroundLayerAndIslands:
+    """`_map_callback` with the UGV ground layer: the node's own masks use it, but the hidden-island rule is handed the UAV map ALONE
+    (bug found in the live W4 run 2026-10-27: merged first, the floor seen under a deck joined the deck to the ground, the roof stopped
+    being an "island" and the planner trusted its flat top)."""
+
+    def test_island_rule_gets_the_uav_elevation_and_masks_get_the_ground_layer(self, node_factory):
+        node = node_factory("planner_type:=astar", "enable_overhead_islands:=true", "enable_exploration:=true")
+        elev = np.zeros((N, N))
+        elev[20:40, 20:40] = 3.5                                  # a deck, as the UAV sees it
+        gv = np.zeros((N, N))
+        gv[28:32, 10:30] = 1.0                                    # the UGV camera looked in under the deck
+        layers = {"elevation": elev, "traversability": np.ones((N, N)), "is_valid": np.ones((N, N)),
+                  "ground_elevation": np.zeros((N, N)), "ground_valid": gv, "ground_traversability": np.ones((N, N))}
+        msg = _gridmap(_open_map())
+        msg.layers = list(layers)
+        msg.data = [encode_layer_to_multiarray(a.astype("float32")) for a in layers.values()]
+        node._map_callback(msg)
+        assert node._layers["elevation"][30, 25] == pytest.approx(3.5)        # what the island rule sees: the deck, intact
+        assert "ground_valid" in node._layers                                  # ... with the ground layer kept for build_masks to merge
+        assert node._walkable_mask[30, 25]                                     # the node's own masks include the ground layer
+
+    def test_island_strategy_freespace_wires_the_freespace_planner_under_roofs(self, node_factory):
+        from nav.freespace import IslandStrategyPlanner
+        node = node_factory("planner_type:=astar", "enable_overhead_islands:=true", "island_strategy:=freespace")
+        assert isinstance(node._island_planner.planner, IslandStrategyPlanner)
+        assert node._island_planner.planner.outer is node._island_planner
+        assert node._island_planner.planner.freespace.stuck is node._global_planner.stuck      # one stuck tracker for both
+
+    def test_island_strategy_default_is_the_original_viewpoints(self, node_factory):
+        node = node_factory("planner_type:=astar", "enable_overhead_islands:=true")
+        assert node._island_planner.planner is node._global_planner
+
+    def test_unknown_island_strategy_is_rejected(self, node_factory):
+        with pytest.raises(ValueError):
+            node_factory("planner_type:=astar", "enable_overhead_islands:=true", "island_strategy:=teleport")

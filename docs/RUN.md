@@ -123,8 +123,17 @@ python3 src/nav/scripts/eval_ground.py w4_structure_decks                       
 python3 src/nav/scripts/eval_camera.py w2_container_yard C                          # X-C5: where should the UGV camera point?
 python3 src/nav/scripts/reclassify_maps.py [--check]                                # re-classify maps/*.npz with the v2 rules
 # the whole pipeline with a real UAV scan + the ground layer (~35 min wall + the video):
-EXTRA="ground_layer:=true" MAX_SIM=900 src/nav/scripts/run_world_mission.sh w4_structure_decks -21.5 -6 -12 8 22 16 "title" 50.0 /tmp/w4_ground
+EXTRA="ground_layer:=true island_strategy:=freespace" MAX_SIM=900 src/nav/scripts/run_world_mission.sh w4_structure_decks -21.5 -6 -12 8 22 16 "title" 50.0 /tmp/w4_ground
+#   video at 4x speed by default (SPEED=1 for real time); VIDEO=<path> to name it
+python3 src/nav/scripts/render_classification.py                                   # media/classification/: ground truth vs old/new rules, all worlds (~1 h, W1 is big)
 Old classifier for an A/B comparison: `terrain_classifier:=v1` on `elevation_mapping_node` (then `max_roughness` matters again).
+
+**Exploration under roofs (step12)** - offline comparison of strategies in the exploration simulator (5-40 s per goal):
+```bash
+python3 src/nav/scripts/eval_exploration.py --goals B --maps uavscan                    # all strategies, W4 room B, real UAV scan
+python3 src/nav/scripts/eval_exploration.py --policies ours adopted --maps uavscan      # today's default vs island_strategy:=freespace
+```
+Live: `island_strategy:=freespace` (with `overhead_islands:=true`) plans goals under a roof with the freespace rule (`nav/freespace.py`).
 
 **Door gauntlet (how narrow a door can the UGV pass?)** - 8 doors, 1.2 ... 0.5 m; goal `k` (x = -14 + 4(k-1), y = 0) is behind door `k`:
 ```bash

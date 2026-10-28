@@ -37,6 +37,7 @@ from emap.utils.gridmap_utils import decode_gridmap, encode_layer_to_multiarray
 from nav import astar_planner
 from nav.anomaly import compute_anomaly_mask
 from nav.overhead import GoalIslandPlanner
+from nav.freespace import IslandStrategyPlanner
 from nav.replay import MapSnapshot, build_masks
 from nav.replay import _context as replay_context
 from nav.global_planner import GlobalPlanner, MapContext
@@ -163,6 +164,11 @@ class PlannerNode(Node):
         self.declare_parameter("viewpoint_block_m", 0.0)         # exploration: split long frontiers into blocks of this size
         self.declare_parameter("viewpoint_standoff_m", 0.0)     # exploration: stand this far from unknown space (lidar blind zone)
         self.declare_parameter("enable_overhead_islands", False)
+        # How to plan while a goal (or the robot) is under a roof (needs enable_overhead_islands): "viewpoints" = the frontier
+        # viewpoint exploration of nav/exploration.py (the original behaviour), "freespace" = plan straight to the goal as if
+        # the unobserved interior were open and re-plan as the lidar reveals walls (nav/freespace.py; step12 doc: offline on W4's
+        # real scan every feasible goal reached with 0 target switches, room B in 99 m where viewpoints never got there).
+        self.declare_parameter("island_strategy", "viewpoints")
         self.declare_parameter("floor_map_topic", "/ugv_floor_map")
         self.declare_parameter("enable_exploration", False)
         self.declare_parameter("exploration_gain_weight", 1.0)
@@ -265,8 +271,17 @@ class PlannerNode(Node):
         self._resolved_regions = ResolvedRegionStore()
         self._layers = None                 # the last UAV map's layers (decoded), for the island logic
         self._floor_layers = None           # the UGV's own map (floor_map_node), same grid
-        self._island_planner = (GoalIslandPlanner(self._global_planner)
-                                if bool(self.get_parameter("enable_overhead_islands").value) and self._planner_type == "astar" else None)
+        self._island_planner = None
+        if bool(self.get_parameter("enable_overhead_islands").value) and self._planner_type == "astar":
+            strategy = str(self.get_parameter("island_strategy").value)
+            if strategy not in ("viewpoints", "freespace"):
+                raise ValueError(f"island_strategy must be 'viewpoints' or 'freespace', got {strategy!r}")
+            if strategy == "freespace":
+                inner = IslandStrategyPlanner(self._global_planner)       # freespace under a roof, GlobalPlanner elsewhere
+                self._island_planner = GoalIslandPlanner(inner)
+                inner.outer = self._island_planner
+            else:
+                self._island_planner = GoalIslandPlanner(self._global_planner)
         if self._island_planner is not None:
             self.create_subscription(GridMap, str(self.get_parameter("floor_map_topic").value), self._floor_map_callback, 10)
 
@@ -315,8 +330,13 @@ class PlannerNode(Node):
         self.get_logger().info(f"planner_node: waiting for a map on {map_topic}...")
 
     def _map_callback(self, msg: GridMap) -> None:
-        layers = combine_ground(decode_gridmap(msg))        # + the UGV's ground layer where it has data (identity without ground_* layers)
-        self._layers = layers
+        uav_layers = decode_gridmap(msg)
+        layers = combine_ground(uav_layers)                 # + the UGV's ground layer where it has data (identity without ground_* layers)
+        # The hidden-island rule (nav.overhead) must judge the UAV map ALONE: the ground layer replaces the deck's height with
+        # the floor's wherever the camera looked under it, which joins the deck to the ground around it - the roof stops being
+        # an "island" and the planner trusts its flat top (live W4, 2026-10-27: 29 of 31 decisions said "goal on ordinary
+        # ground", 89 routes through unseen walls). The island planner's make_ctx -> build_masks applies combine_ground itself.
+        self._layers = uav_layers
         self._walkable_mask = compute_walkable_mask(layers["traversability"], layers["is_valid"])
         self._traversability = layers["traversability"]
         self._unobserved_mask = ~np.asarray(layers["is_valid"]).astype(bool)
@@ -456,7 +476,7 @@ class PlannerNode(Node):
                 return replay_context(snap, masks, self._mapping_active())
             result = self._island_planner.plan(self._layers, self._floor_layers, make_ctx, start_xy, goal_xy,
                                                self._resolution, self._center_x, self._center_y)
-            note = self._island_planner.note + "; " + self._global_planner.last_note
+            note = self._island_planner.note + "; " + self._island_planner.planner.last_note   # whichever inner planner answered
             if note != self._last_logged_note:
                 self.get_logger().info(f"global planner: {note}")
                 self._last_logged_note = note

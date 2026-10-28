@@ -184,6 +184,9 @@ ground layer = a separate map fed only by the UGV camera. On 8816 cells the UGV 
 99.2 % (98.8 % under roofs). **902 cells have no UAV opinion at all (573 of them under a roof) and the ground layer classifies them 100 %
 correctly.** No floor-lethal cell under a roof was called walkable by the UAV map on these routes (the planner's routes avoid walls, so the strip rarely
 contains one) - so the measurable gain of a ground layer on a driven route is *new knowledge* (unobserved -> known), not corrections.
+**Live correction (2026-10-28, step12 section 7):** the live camera ground layer was NOT this clean - on W4 a third of its LETHAL cells were
+false (1-3 cell specks, flying pixels at edges; the offline camera model has none). A confidence gate (`nav/ground_layer.py`, 0.15) removes most
+of them; specks at door jambs remain and closed W4 room B's door in live run 2.
 
 **Conclusion and what is NOT built.** The accuracy gains came from the rules (sections 3-4b), not from the UGV data; the UGV refinement is worth
 having for unobserved/occluded cells (and the near-range noise), but it needs the `ground` layer in the node (a second map fed by

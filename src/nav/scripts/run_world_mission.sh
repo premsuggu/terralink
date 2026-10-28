@@ -4,7 +4,7 @@
 #   2. when the patrol has covered the site, the map is saved (<world>_uavscan.npz) and the UGV mission starts:
 #      A* + frontier/anomaly/exploration logic; the UGV's own camera and the 3D voxel map discover what the UAV cannot see
 #   3. the whole run is recorded; the video is composed afterwards
-#   (EXTRA="arg:=value ..." adds launch arguments, e.g. EXTRA="ground_layer:=true")
+#   (EXTRA="arg:=value ..." adds launch arguments, e.g. EXTRA="ground_layer:=true"; VIDEO=<path>, SPEED (default 4x), FPS (default 10))
 #   run_world_mission.sh <world> <sx> <sy> <gx> <gy> <end_x> <end_y> "<title>" [global_map_length=56] [out_dir]
 # <end_x,end_y> = the patrol's last waypoint (scan is finished when the UAV is within 2.5 m of it).
 # Needs: ROS sourced, nav built, build_world.py <world> run (writes <world>_scan.world and <world>_patrol.txt).
@@ -36,4 +36,4 @@ wait $REC
 pgrep -af "$PAT" | grep -v pgrep | awk '{print $1}' | xargs -r kill -9
 tail -2 "$OUT/rec.log"
 python3 src/nav/scripts/make_run_video.py --run "$OUT/rec" --world "$W" --start "$SX" "$SY" --goal "$GX" "$GY" \
-    --map uavscan --out "media/runs/${W}_mission.mp4" --title "$TITLE"
+    --map uavscan --out "${VIDEO:-media/runs/${W}_mission.mp4}" --title "$TITLE" --fps "${FPS:-10}" --speed "${SPEED:-4}"

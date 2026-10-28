@@ -41,6 +41,8 @@ Not tested on the construction site (on hold) - a maze/room world ported from `s
 
 14. **UGV ground layer, camera tilt, event-driven re-plan** ✅ *done 2026-10-27 (457 nav tests; live: W4 goal B reached)* - front camera 0.6 -> 0.35 rad (X-C5), `ground_layer:=true` + `nav/ground_layer.py`, `nav/plan_validity.py` + `plan_blocked` + follower `enable_blocked_replan`, robot self-pollution clearing in `astar_planner`, world maps re-classified with v2 (`scripts/reclassify_maps.py`). Efficiency of the hidden-interior exploration is still open (366 m for a 17 m goal). `step11_terrain_classification.md` sections 9-11.
 
+15. **Exploration: existing solutions vs ours; freespace under roofs** ✅ *offline comparison 2026-10-27; adopted 2026-10-28 (477 nav tests); live W4 room B not yet reached (camera false obstacles at doors)* - `tests/nav/explore_policies.py`, `tests/nav/explore_sim.py` (`policy=`, `overhead_on_switch_only`, `ground_layer`), `scripts/eval_exploration.py`; `nav/freespace.py` + `island_strategy:=freespace`; island rule sees the UAV layers alone (`planner_node._map_callback`); ground-layer confidence gate (`nav/ground_layer.py`); `scripts/render_classification.py` -> `media/classification/`. `step12_exploration.md`.
+
 ## Ground rules (carried over from AGENTS.md / emap's own precedent)
 
 - Reuse `emap`'s already-tested code wherever it fits (`traversability.LETHAL`, `decode_gridmap`) rather than re-deriving it.
