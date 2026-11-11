@@ -163,10 +163,14 @@ class ExploreSim:
                 break
             self.look(x, y, yaw)
             plans += 1
-            layers = {k: np.array(v, copy=True) for k, v in self.base.layers.items()}
+            # A map saved from a live mission can carry that mission's own camera ground layer (ground_*): drop it, the
+            # simulated camera below replaces it. (Found 2026-10-29: the stale `ground_confidence`, near zero, made the
+            # confidence gate of nav/ground_layer.py throw away every simulated camera cell.)
+            layers = {k: np.array(v, copy=True) for k, v in self.base.layers.items() if not k.startswith("ground_")}
             if self.ground_layer:
                 layers.update(ground_valid=self.cam_seen.astype(np.float32), ground_traversability=self.t_trav.astype(np.float32),
-                              ground_elevation=self.t_elev.astype(np.float32))
+                              ground_elevation=self.t_elev.astype(np.float32),
+                              ground_confidence=self.cam_seen.astype(np.float32))   # the simulated camera is exact
                 # Not combined here: like planner_node, the island rule sees the UAV layers alone and build_masks (inside
                 # make_ctx) applies combine_ground to the composed map.
             if self.planner is not None:

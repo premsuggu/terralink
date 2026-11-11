@@ -44,6 +44,8 @@ setup(
             'voxel_map_node = nav.voxel_map_node:main',
             'floor_map_node = nav.floor_map_node:main',
             'map_replay_node = nav.map_replay_node:main',
+            'safety_node = nav.safety_node:main',
+            'mission_node = nav.mission_node:main',
         ],
     },
 )

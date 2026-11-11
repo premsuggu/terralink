@@ -143,6 +143,11 @@ class ElevationMappingNode(Node):
         self.declare_parameter("drift_min_matches", 30)
         self.declare_parameter("drift_correction_gain", 0.3)
         self.declare_parameter("drift_max_reasonable_residual", 1.0)
+        # U-01 (2026-11-11): only flat cells (3x3 relief below this, m) are drift references, and an estimate below the deadband (m)
+        # counts as zero. A slope/edge cell's stored height is a cell average, so points on one flank bias the median and the
+        # integrator slid the map ~0.3 m in the stress worlds. Relief <= 0 disables the filter (old behaviour).
+        self.declare_parameter("drift_max_local_relief", 0.05)
+        self.declare_parameter("drift_deadband", 0.01)
         self.declare_parameter("synthetic_drift_z_rate", 0.0)
         # See this file's module docstring for the full rationale. Empty
         # string (the default) means "no second sensor" - the subscription
@@ -215,6 +220,9 @@ class ElevationMappingNode(Node):
         self._drift_max_reasonable_residual = float(
             self.get_parameter("drift_max_reasonable_residual").value
         )
+        _relief = float(self.get_parameter("drift_max_local_relief").value)
+        self._drift_max_local_relief = _relief if _relief > 0 else None
+        self._drift_deadband = float(self.get_parameter("drift_deadband").value)
         self._synthetic_drift_z_rate = float(self.get_parameter("synthetic_drift_z_rate").value)
         self._z_bias_estimate = 0.0
         self._start_time = time.monotonic()
@@ -446,6 +454,8 @@ class ElevationMappingNode(Node):
                 min_confidence_variance=self._drift_confidence_variance_thresh,
                 min_matches=self._drift_min_matches,
                 max_reasonable_residual=self._drift_max_reasonable_residual,
+                max_local_relief=self._drift_max_local_relief,
+                deadband=self._drift_deadband,
             )
             if residual_left is not None:
                 self._z_bias_estimate += self._drift_correction_gain * residual_left

@@ -10,7 +10,7 @@ W=$1; SX=$2; SY=$3; GX=$(printf "%.3f" "$4"); GY=$(printf "%.3f" "$5"); TITLE=$6
 REPO=$(cd "$(dirname "$0")/../../.." && pwd)
 cd "$REPO"
 # stale processes from an earlier launch silently corrupt a new one (see tunnel_demo.launch.py)
-pgrep -af "ros2 launch|ign gazebo|gz sim|parameter_bridge|static_transform_publisher|map_replay|planner_node|voxel_map_node|floor_map_node|waypoint_follower|nav2_|controller_server|bt_navigator|planner_server|behavior_server|smoother|lifecycle_manager|velocity_smoother" | grep -v pgrep | awk '{print $1}' | xargs -r kill -9
+pgrep -af "ros2 launch|ign gazebo|gz sim|parameter_bridge|static_transform_publisher|map_replay|planner_node|voxel_map_node|floor_map_node|waypoint_follower|nav2_|controller_server|bt_navigator|planner_server|behavior_server|smoother|lifecycle_manager|velocity_smoother|safety_node|mission_node" | grep -v pgrep | awk '{print $1}' | xargs -r kill -9
 sleep 2
 rm -rf "${OUT:?}"
 python3 src/nav/scripts/record_world_run.py --out "$OUT" --goal "$GX" "$GY" --max-sim-sec "${MAX_SIM:-700}" > "$OUT.rec.log" 2>&1 &
@@ -21,7 +21,7 @@ ros2 launch nav tunnel_demo.launch.py world:=${W}_run.world nav2_params:=nav2_pa
     goal_x:=$GX goal_y:=$GY ${EXTRA:-} > "$OUT.launch.log" 2>&1 &
 LAUNCH=$!
 wait $REC
-pgrep -af "ros2 launch|ign gazebo|gz sim|parameter_bridge|static_transform_publisher|map_replay|planner_node|voxel_map_node|floor_map_node|waypoint_follower|nav2_|controller_server|bt_navigator|planner_server|behavior_server|smoother|lifecycle_manager|velocity_smoother" | grep -v pgrep | awk '{print $1}' | xargs -r kill -9
+pgrep -af "ros2 launch|ign gazebo|gz sim|parameter_bridge|static_transform_publisher|map_replay|planner_node|voxel_map_node|floor_map_node|waypoint_follower|nav2_|controller_server|bt_navigator|planner_server|behavior_server|smoother|lifecycle_manager|velocity_smoother|safety_node|mission_node" | grep -v pgrep | awk '{print $1}' | xargs -r kill -9
 cat "$OUT.rec.log" | tail -2
 python3 src/nav/scripts/make_run_video.py --run "$OUT" --world "$W" --start "$SX" "$SY" --goal "$GX" "$GY" \
     --map "$MAP" --fps "${FPS:-20}" --out "media/runs/${W}_run.mp4" --title "$TITLE"

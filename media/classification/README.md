@@ -1,9 +1,16 @@
-# Terrain classification: ground truth vs our rules
+# Terrain classification pictures
 
-Pictures of how every map cell is classified, for the five stress worlds. Made by `src/nav/scripts/render_classification.py`
-(~10 min; method and code: `docs/work-docs/nav/step11_terrain_classification.md`, experiment X-C1).
+What each world really looks like from above, next to how our rules classify every map cell.
 
-Each cell gets one of three classes:
+## Main pictures: `<world>.png` (one per stress world)
+
+Two panels covering the same area at the same scale:
+
+| left: **real top-down view** | right: **segmented by our rules (v2)** |
+|---|---|
+| The world rendered by Gazebo itself, looking straight down. | Every 10 cm map cell coloured by the class our rules give it. |
+
+How to read the colours on the right:
 
 | colour | class | meaning for the planner |
 |---|---|---|
@@ -12,58 +19,61 @@ Each cell gets one of three classes:
 | dark red | LETHAL | never drive here |
 | grey | not observed | the UAV camera never saw it |
 
-## How to read one picture (5 panels, left to right)
+Which map the right panel comes from:
 
-1. **true height** of the world (what the UAV flies over).
-2. **GROUND TRUTH class**: computed from the TRUE, complete, noise-free geometry with the Jackal's MEASURED limits (step11 X-A1:
-   a 9 cm step is crossed and 10 cm blocks it; ramps up to 35 deg). **Important:** this uses the same thresholds as our rules
-   (max step 0.09 m, max slope 0.35 rad). So the pictures test how well the rules SURVIVE A REAL SCAN (noise, gaps, sparse points);
-   whether the thresholds themselves are right was tested separately, by driving the vehicle (X-A1).
-3. **OLD rule** (what the node ran before step11) on the scanned map.
-4. **NEW rules v2** (today's default) on the same scanned map.
-5. **Errors of the new rules**: white = correct, yellow = EASY/DIFFICULT mix-up (only changes the cost), blue = false LETHAL (free
-   ground lost), **red = MISSED LETHAL** (the dangerous error: a hazard the planner would drive into).
-
-## Files
-
-| file | scan |
+| world | map |
 |---|---|
-| `<world>_low_noise.png` | simulated UAV scan (the live camera model + the real emap fusion), depth noise 1 cm, 7 m altitude |
-| `<world>_high_noise.png` | the same, noise 3 cm + 0.001 x range^2 (up to ~7 cm) |
-| `w4_structure_decks_real_scan.png` | the REAL map emap built during a live Gazebo mission (`src/nav/maps/w4_structure_decks_uavscan.npz`) |
-| `scores.md` | all numbers |
+| W4 structure decks | the **real** map emap built during a live Gazebo mission (`src/nav/maps/w4_structure_decks_uavscan.npz`) |
+| W1, W2, W3, W5 | no live scan of these worlds is saved, so the **offline scan simulator** at low noise (1 cm): the live camera model + the real emap fusion (step11 X-C1) |
 
-## The numbers (from `scores.md`)
+### Why the real view is "cut at 5 m"
 
-| world / scan | old rule: agreement | new rules: agreement | new: false LETHAL | new: MISSED LETHAL, per cell | new: MISSED LETHAL, interior, > 1 cell away |
-|---|---|---|---|---|---|
-| W1 house site, low / high noise | 9.5 % | **99.2 / 92.3 %** | 0.1 / 3.5 % | 3.7 / 5.0 % | 0.6 / 0.2 % |
-| W2 container yard | 8.3 % | **98.1 / 93.8 %** | 0.0 / 2.4 % | 8.6 / 8.5 % | 0.0 / 0.0 % |
-| W3 excavation slopes | 15.2 % | **98.8 / 88.5 %** | 0.0 / 3.7 % | 1.5 / 2.4 % | 0.2 / 0.1 % |
-| W4 structure decks | 3.5 % | **99.2 / 94.8 %** | 0.0 / 1.5 % | 23.0 / 22.9 % | 0.0 / 0.0 % |
-| W5 door gauntlet | 5.0 % | **100.0 / 94.4 %** | 0.0 / 3.4 % | 0.0 / 0.0 % | 0.0 / 0.0 % |
-| **W4 REAL Gazebo scan** | 58.4 % | **84.9 %** | 7.6 % | 31.0 % | 14.1 % |
+Our maps describe the world **below the UAV's flight height**: the patrol flies at 3-4.5 m, so the maps keep everything up to
+5 m (decks, walkway roofs) and drop what is higher (crane jibs, the upper floors of W1's 58 m concrete tower) - see
+`UAV_CEILING` in `src/nav/scripts/worldgen/worlds/*.py`. The left picture shows the same slice, so the two panels line up:
 
-**What this shows**
+* the camera is put high above the map (about 10x the map's width: 500 m for W4, 1200 m for W1) with the narrowest lens
+  Gazebo accepts (0.1 rad), so the picture is almost a map (a 5 m tall object at the map's edge shifts outwards by ~1 %, at most
+  0.25 m; the ground itself does not shift);
+* its near clipping plane sits at 5 m above the ground: everything higher is simply not drawn;
+* shadows are off (the cut-away tower would otherwise still darken half of W1).
 
-* The OLD rule calls almost everything LETHAL on a scan (100 % false LETHAL): it used the map's height *variance* as "roughness",
-  and a cell seen once from 6-7 m always has a large variance. The planner then had nowhere to drive. (On the real scan the old rule
-  looks better, 58 %, only because that scan's variance was small - it is still 39 % false LETHAL.)
-* The NEW rules agree with the ground truth on 92-100 % of the cells on simulated scans, and 85 % on the real one.
-* **Two columns for missed LETHAL, and why.** "Per cell" is strict. Walls in the truth are often ONE cell (10 cm) thin, so a wall
-  predicted one cell to the side counts as a miss *and* a false LETHAL, although the planner (which keeps the robot's radius away
-  from every LETHAL cell) would avoid it anyway. And at the RIM of the observed area (e.g. the site's boundary fence at the edge of
-  the scan) the far side of a wall was never measured, so no rule can classify it (step11, "the rim limitation"). The last column
-  forgives a one-cell offset and counts only cells whose whole 5 x 5 neighbourhood was observed: on simulated scans 0-0.6 %.
-* **The real W4 scan, 14.1 %: read it carefully.** About 820 of its 874 "missed" cells are under the EDGES OF ROOFS: the scaffold
-  walkway roof (y ~ -18) and the deck edge over the west door. This ground truth is the UAV's view, which treats a roof edge 3.2-3.5 m
-  up as a cliff; the real camera, looking at an angle, saw the floor underneath - and the UGV really can drive there (goal D is under
-  that walkway). So most of those are not hazards the robot would hit. The real scan's 7.6 % false LETHAL is the bigger practical
-  problem: dotted specks where the scan was thin (step12, section 4.3).
-* Noise costs mainly agreement through EASY <-> DIFFICULT mix-ups (yellow), not safety: noise compensation (step11 section 4b) keeps
-  noise from turning flat ground LETHAL.
+`topdown/<world>_full.png` is the uncut view from the 150 m camera the run videos use, with shadows. It is closer to "what a
+person would see", but tall things look bigger and lean outwards (W1's tower top appears 1.6x its size), so it does **not**
+line up with the map.
 
-## Not covered here
+### Things to look for
 
-The UGV camera's own ground layer (step11 sections 8-9). Live it was much noisier than offline (step12 section 7: a third of its
-LETHAL cells were false, flying pixels at edges).
+* **Walls, containers, vehicles, barrels** are thin dark-red outlines: only their edges are LETHAL; the rules judge a step
+  between neighbouring cells, so the *top* of a container is EASY-coloured (the robot can never get up there, which the step
+  around it already guarantees).
+* **Gravel/rough patches and slopes** (W1 corners, W3) are orange/red mixtures.
+* **Roofs and decks** (W1 first floor, W4 rooms and walkway) are classified from their TOP, because that is what the UAV sees.
+  What is under them is planned separately (hidden-island rule, step12).
+* **W4 real map:** scattered red specks on open ground are the false obstacles discussed in step12 section 4.3 - the real scan
+  was thin there.
+
+## Comparison pictures and numbers: `comparison/`
+
+The earlier five-panel pictures (true height | ground truth | old rule | new rule | errors), for low and high sensor noise and
+for W4's real scan, plus `comparison/scores.md` with every number. The ground truth there uses the **same thresholds** as our
+rules (max step 0.09 m, max slope 0.35 rad - the Jackal's measured limits, step11 X-A1) on perfect, noise-free geometry, so it
+tests how well the rules survive a real scan; the thresholds themselves were tested by driving the vehicle.
+
+| scan | old rule: agreement | new rules: agreement | new: false LETHAL | new: missed LETHAL (interior, > 1 cell away) |
+|---|---|---|---|---|
+| simulated, W1-W5, low / high noise | 3-15 % | 98-100 % / 88-95 % | 0-0.1 % / 1.5-3.7 % | 0-0.6 % |
+| **W4 real Gazebo scan** | 58.4 % | **84.9 %** | 7.6 % | 14.1 % (\*) |
+
+(\*) about 820 of those 874 cells lie under roof edges, which the UAV-view ground truth calls a cliff although the floor below is
+drivable; see the step11 and step12 docs.
+
+## How to regenerate
+
+```bash
+source /opt/ros/humble/setup.bash && source install/local_setup.bash
+python3 src/nav/scripts/render_world_topdown.py      # the real views, ~1 min per picture (headless Gazebo)
+python3 src/nav/scripts/render_classification.py     # the class maps + comparison pictures, ~10 min
+```
+
+Not covered here: the UGV camera's own ground layer (step11 sections 8-9; live much noisier than offline, step12 section 7).

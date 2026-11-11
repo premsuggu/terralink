@@ -131,6 +131,9 @@ class GoalIslandPlanner:
         self.planner = planner
         self.island_kwargs = island_kwargs
         self.last_zone: np.ndarray | None = None
+        # fraction of the grid the UAV observed (UAV layers only, before the UGV's own map is merged in); 0 = no UAV map at all.
+        # `nav.freespace.IslandStrategyPlanner` reads it to switch to "unknown = open" planning when the UGV explores alone (EX-07).
+        self.last_uav_fraction: float = 1.0
         self.note = ""
 
     def plan(self, layers, floor_layers, make_ctx, start_xy, goal_xy, resolution, center_x, center_y, now=None):
@@ -140,6 +143,7 @@ class GoalIslandPlanner:
 
         # What the UGV has seen fills the UAV's gaps everywhere (outside islands too); the UAV map alone is `layers`.
         walkable0 = compute_walkable_mask(layers["traversability"], layers["is_valid"])
+        self.last_uav_fraction = float(np.mean(np.asarray(layers["is_valid"]) > 0))
         zone = goal_island_zone(layers["elevation"], walkable0, resolution, center_x, center_y, goal_xy, **self.island_kwargs)
         # The ROBOT can be on the island too (once it has driven in under the roof, the UAV map says it is standing on a
         # huge open plateau). Then the UAV map is meaningless around it: its "route across the plateau" goes through walls

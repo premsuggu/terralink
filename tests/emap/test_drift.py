@@ -190,3 +190,45 @@ def test_damped_gain_converges_toward_true_offset_without_overshoot():
         previous_error = error
 
     assert bias_estimate == pytest.approx(true_offset, abs=1e-3)
+
+
+def _ramp_map(slope=0.5):
+    """Confident cells on a RAMP (height = slope * x): each cell stores the height at its centre."""
+    emap = ElevationMap(resolution=RESOLUTION, length=LENGTH, initial_variance=INITIAL_VARIANCE)
+    xs = np.arange(-3, 3).astype(float)
+    xx, yy = np.meshgrid(xs, xs)
+    pts = np.column_stack([xx.ravel(), yy.ravel(), slope * xx.ravel()])
+    origin = np.array([0.0, 0.0, 8.0])
+    for _ in range(10):
+        fuse_points(emap, pts, origin, sensor_noise_factor=SENSOR_NOISE_FACTOR, mahalanobis_thresh=MAHALANOBIS_THRESH,
+                    outlier_variance=OUTLIER_VARIANCE, min_valid_distance=MIN_VALID_DISTANCE)
+    return emap, xx.ravel(), yy.ravel()
+
+
+def test_ramp_one_flank_gives_phantom_drift_without_the_flatness_filter_and_none_with_it():
+    """U-01: the pose has NOT drifted, but a pass sees only the upper half of every ramp cell (x offset +0.25 m).
+    Those points sit 0.5 * 0.25 = 0.125 m above the cell's stored (average) height: the old estimator reports that as drift."""
+    emap, xs, ys = _ramp_map(0.5)
+    pts = np.column_stack([xs + 0.25, ys, 0.5 * (xs + 0.25)])           # true surface heights, no pose error at all
+    kw = dict(min_confidence_variance=MIN_CONFIDENCE_VARIANCE, min_matches=MIN_MATCHES)
+    old = estimate_vertical_drift(emap, np.tile(pts, (2, 1)), **kw)
+    assert old is not None and old > 0.1                                # phantom drift of ~0.125 m
+    assert estimate_vertical_drift(emap, np.tile(pts, (2, 1)), max_local_relief=0.05, **kw) is None   # slope cells are not references
+
+
+def test_flatness_filter_keeps_real_drift_on_flat_ground():
+    emap, points = new_confident_map(true_height=2.0)
+    drifted = points.copy()
+    drifted[:, 2] += 0.4
+    est = estimate_vertical_drift(emap, drifted, min_confidence_variance=MIN_CONFIDENCE_VARIANCE, min_matches=MIN_MATCHES,
+                                  max_local_relief=0.05, deadband=0.01)
+    assert est == pytest.approx(0.4, abs=0.05)
+
+
+def test_deadband_zeroes_a_tiny_estimate():
+    emap, points = new_confident_map(true_height=2.0)
+    shifted = points.copy()
+    shifted[:, 2] += 0.005
+    est = estimate_vertical_drift(emap, shifted, min_confidence_variance=MIN_CONFIDENCE_VARIANCE, min_matches=MIN_MATCHES,
+                                  deadband=0.02)
+    assert est == 0.0

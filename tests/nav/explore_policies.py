@@ -69,6 +69,7 @@ class FreespacePlanner:
 
     def __init__(self, unknown_cost: float = 1.0, inflation_m: float = 0.27, footprint_m: float = 0.3, goal_snap_m: float = 0.4):
         self.unknown_cost, self.inflation_m, self.footprint_m, self.goal_snap_m = unknown_cost, inflation_m, footprint_m, goal_snap_m
+        self.extra_blocked: list[tuple[float, float]] = []    # (x, y) the robot BUMPED into (explore_wallfollow._Bumper)
         self.last_note = ""
 
     def grids(self, ctx, start_xy):
@@ -79,6 +80,10 @@ class FreespacePlanner:
         scene = ap._make_scene(walkable, ctx.resolution, ctx.center_x, ctx.center_y, start_xy, ctx.traversability,
                                None, False, None, False, ctx.force_free, ap.PlannerParams(), {}, None)
         known_blocked = ~scene.base_walkable & ~unknown
+        for xy in self.extra_blocked:                          # bumps: obstacles the sensors cannot see
+            c = _cell(xy, ctx)
+            if 0 <= c[0] < known_blocked.shape[0] and 0 <= c[1] < known_blocked.shape[1]:
+                known_blocked[c] = True
         clear = ap.clearance_m(known_blocked, ctx.resolution)
         passable = (clear >= self.inflation_m - 1e-6) | scene.force_free
         s = _cell(start_xy, ctx)

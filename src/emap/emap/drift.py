@@ -40,6 +40,8 @@ def estimate_vertical_drift(
     min_confidence_variance: float,
     min_matches: int,
     max_reasonable_residual: float | None = None,
+    max_local_relief: float | None = None,
+    deadband: float = 0.0,
 ) -> float | None:
     """Estimate how far the current pose's Z belief has drifted, using this
     batch of points measured against the map's most-confident cells.
@@ -73,6 +75,14 @@ def estimate_vertical_drift(
             "disagreement too large to be trusted" principle, applied here
             to the aggregate estimate instead of one point.
 
+        max_local_relief (U-01 fix, 2026-11-11): only cells whose 3x3 neighbourhood spans less than this many metres of
+            elevation count as references. On a slope or at a step edge a cell's stored height is an AVERAGE over the cell,
+            while a point inside it sits higher or lower than that average; if the points of a pass land mostly on one side
+            (the camera sees one flank of a ramp) the median residual is non-zero although the pose has not drifted - and the
+            integrator then slides the whole map (~0.3 m over a patrol in the stress worlds). Flat cells have no such bias.
+            None = no filter (the old behaviour).
+        deadband: an estimate smaller than this (m) is treated as 0 - sensor noise, not drift.
+
     Returns:
         The estimated Z bias (meters, `measured - true`: positive means the
         pose currently reads too HIGH) as the median residual across every
@@ -91,10 +101,24 @@ def estimate_vertical_drift(
     is_valid = emap.layer("is_valid") > 0.5
     variance_layer = emap.layer("variance")
     confident = is_valid[row, col] & (variance_layer[row, col] < min_confidence_variance)
+    elevation_layer = emap.layer("elevation")
+    if max_local_relief is not None:
+        # relief of the 3x3 neighbourhood of every point's cell (invalid neighbours are ignored; border cells use what exists)
+        h, w = elevation_layer.shape
+        lo = np.full(row.shape, np.inf)
+        hi = np.full(row.shape, -np.inf)
+        for dr in (-1, 0, 1):
+            for dc in (-1, 0, 1):
+                rr = np.clip(row + dr, 0, h - 1)
+                cc = np.clip(col + dc, 0, w - 1)
+                ok = is_valid[rr, cc]
+                e = elevation_layer[rr, cc]
+                lo = np.where(ok, np.minimum(lo, e), lo)
+                hi = np.where(ok, np.maximum(hi, e), hi)
+        confident &= (hi - lo) < max_local_relief
     if np.count_nonzero(confident) < min_matches:
         return None
 
-    elevation_layer = emap.layer("elevation")
     matched_true_h = elevation_layer[row[confident], col[confident]]
     matched_measured_h = z[confident]
 
@@ -104,6 +128,8 @@ def estimate_vertical_drift(
     # the same reasoning fuse_points' own outlier rejection relies on.
     residual = matched_measured_h - matched_true_h
     estimate = float(np.median(residual))
+    if abs(estimate) < deadband:
+        estimate = 0.0
 
     if max_reasonable_residual is not None and abs(estimate) > max_reasonable_residual:
         return None

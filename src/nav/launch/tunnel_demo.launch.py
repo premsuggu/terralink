@@ -360,7 +360,7 @@ def generate_launch_description():
     # nav_sim.launch.py's matching comment for the full live evidence
     # (`ros2 node info`/`ros2 topic info` output) this was found with.
     nav2_launch = GroupAction([
-        SetRemap(src='/cmd_vel', dst='/nav2_cmd_vel'),
+        SetRemap(src='/cmd_vel', dst=PythonExpression(["'/nav2_cmd_vel_raw' if '", LaunchConfiguration('enable_safety'), "' == 'true' else '/nav2_cmd_vel'"])),
         SetRemap(src='cmd_vel_smoothed', dst='/nav2_cmd_vel_smoothed'),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource([os.path.join(
@@ -421,6 +421,39 @@ def generate_launch_description():
     # NOTHING here noticing or asking for a fresh plan - see
     # waypoint_follower.py's own declare_parameter comment for the exact
     # live failure this was found from.
+    # --- S-01..S-03 (opt-in, default off: the old single-goal behaviour is unchanged) ---
+    # enable_safety:=true  -> safety_node gates Nav2's velocity (Nav2 output is remapped to /nav2_cmd_vel_raw, the gate republishes it on
+    #                         /nav2_cmd_vel, which the bridge sends to the wheels): zero while a stop condition holds; geofence / tilt /
+    #                         close obstacle / battery budget / UAV-link loss (nav/safety.py).
+    # mission_goals:="x1,y1,x2,y2,..." -> mission_node hands the goals out one at a time (waypoint_follower goal_topic:=/mission/goal);
+    #                         mission_mode once|patrol, mission_loops, base = (base_x, base_y); after the last goal the UGV returns home.
+    safety_args = [
+        DeclareLaunchArgument('enable_safety', default_value='false', description='Gate the UGV velocity with the safety layer (S-01/S-02).'),
+        DeclareLaunchArgument('safety_fence', default_value='', description='Geofence "xmin,ymin,xmax,ymax" (map frame); empty = none.'),
+        DeclareLaunchArgument('battery_budget_m', default_value='0.0', description='Driving budget in metres (0 = battery check off).'),
+        DeclareLaunchArgument('mission_goals', default_value='', description='"x1,y1,x2,y2,..." goals for the mission layer (S-03); empty = single goal_x/goal_y.'),
+        DeclareLaunchArgument('mission_mode', default_value='once', description='once | patrol'),
+        DeclareLaunchArgument('mission_loops', default_value='1', description='Patrol laps (0 = forever).'),
+        DeclareLaunchArgument('base_x', default_value='0.0', description='Return-to-base X.'),
+        DeclareLaunchArgument('base_y', default_value='0.0', description='Return-to-base Y.'),
+    ]
+    safety_node = Node(
+        package='nav', executable='safety_node', name='safety_node', output='screen',
+        parameters=[{'use_sim_time': True,
+                     'fence': LaunchConfiguration('safety_fence'),
+                     'battery_budget_m': ParameterValue(LaunchConfiguration('battery_budget_m'), value_type=float),
+                     'base_x': ParameterValue(LaunchConfiguration('base_x'), value_type=float),
+                     'base_y': ParameterValue(LaunchConfiguration('base_y'), value_type=float)}],
+        condition=IfCondition(LaunchConfiguration('enable_safety')))
+    mission_node = Node(
+        package='nav', executable='mission_node', name='mission_node', output='screen',
+        parameters=[{'use_sim_time': True,
+                     'mode': LaunchConfiguration('mission_mode'),
+                     'loops': ParameterValue(LaunchConfiguration('mission_loops'), value_type=int),
+                     'base_x': ParameterValue(LaunchConfiguration('base_x'), value_type=float),
+                     'base_y': ParameterValue(LaunchConfiguration('base_y'), value_type=float),
+                     'goals': LaunchConfiguration('mission_goals')}],
+        condition=IfCondition(PythonExpression(["'", LaunchConfiguration('mission_goals'), "' != ''"])))
     prm_waypoint_follower = Node(
         package='nav',
         executable='waypoint_follower',
@@ -432,6 +465,7 @@ def generate_launch_description():
             'enable_voxel_verification': True,
             'enable_anomaly_replan': True,
             'enable_stuck_recovery': True,
+            'goal_topic': PythonExpression(["'/mission/goal' if '", LaunchConfiguration('mission_goals'), "' != '' else ''"]),
         }],
         output='screen',
         condition=IfCondition(LaunchConfiguration('start_follower')),
@@ -576,4 +610,6 @@ def generate_launch_description():
         bridges_and_tf_group,
         nav_layer_group,
         follower_group,
+        *safety_args,
+        TimerAction(period=9.0, actions=[safety_node, mission_node]),
     ])

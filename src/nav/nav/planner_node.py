@@ -169,6 +169,9 @@ class PlannerNode(Node):
         # the unobserved interior were open and re-plan as the lidar reveals walls (nav/freespace.py; step12 doc: offline on W4's
         # real scan every feasible goal reached with 0 target switches, room B in 99 m where viewpoints never got there).
         self.declare_parameter("island_strategy", "viewpoints")
+        # EX-07: with island_strategy "freespace", also plan through unobserved space in the open when the UAV observed less than
+        # this fraction of the grid (= no UAV map, the UGV explores alone). 0 = only under roofs. See nav/freespace.py.
+        self.declare_parameter("no_uav_fraction", 0.02)
         self.declare_parameter("floor_map_topic", "/ugv_floor_map")
         self.declare_parameter("enable_exploration", False)
         self.declare_parameter("exploration_gain_weight", 1.0)
@@ -277,7 +280,8 @@ class PlannerNode(Node):
             if strategy not in ("viewpoints", "freespace"):
                 raise ValueError(f"island_strategy must be 'viewpoints' or 'freespace', got {strategy!r}")
             if strategy == "freespace":
-                inner = IslandStrategyPlanner(self._global_planner)       # freespace under a roof, GlobalPlanner elsewhere
+                # freespace under a roof - and everywhere when the UAV observed < no_uav_fraction of the grid (EX-07); GlobalPlanner elsewhere
+                inner = IslandStrategyPlanner(self._global_planner, no_uav_fraction=float(self.get_parameter("no_uav_fraction").value))
                 self._island_planner = GoalIslandPlanner(inner)
                 inner.outer = self._island_planner
             else:

@@ -11,7 +11,7 @@
 set -u
 W=$1; SX=$2; SY=$3; GX=$(printf "%.3f" "$4"); GY=$(printf "%.3f" "$5"); EX=$6; EY=$7; TITLE=$8; GML=${9:-56.0}; OUT=${10:-/tmp/${W}_mission}
 REPO=$(cd "$(dirname "$0")/../../.." && pwd); cd "$REPO"
-PAT='ros2 launch|ign gazebo|gz sim|parameter_bridge|static_transform|map_replay|planner_node|voxel_map_node|elevation_mapping|uav_autopilot|waypoint_follower|nav2_|controller_server|bt_navigator|planner_server|behavior_server|smoother|lifecycle_manager|velocity_smoother|record_world_run'
+PAT='safety_node|mission_node|ros2 launch|ign gazebo|gz sim|parameter_bridge|static_transform|map_replay|planner_node|voxel_map_node|elevation_mapping|uav_autopilot|waypoint_follower|nav2_|controller_server|bt_navigator|planner_server|behavior_server|smoother|lifecycle_manager|velocity_smoother|record_world_run'
 pgrep -af "$PAT" | grep -v pgrep | awk '{print $1}' | xargs -r kill -9; sleep 2
 rm -rf "${OUT:?}"; mkdir -p "$OUT"
 ros2 launch nav tunnel_demo.launch.py world:=${W}_scan.world nav2_params:=nav2_params_large.yaml headless:=true autonomous_uav:=true \

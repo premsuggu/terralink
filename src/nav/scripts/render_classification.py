@@ -1,7 +1,14 @@
 #!/usr/bin/env python3
-"""Pictures of the terrain classification: ground truth vs what our rules predict from a UAV scan (writes media/classification/).
+"""Pictures of the terrain classification (writes media/classification/).
 
-For every stress world (W1-W5) and two sensor-noise levels:
+MAIN PICTURES, media/classification/<world>.png - two panels, same area and scale:
+  left  - the REAL top-down view of the world, rendered by Gazebo (topdown/<world>.png, made by render_world_topdown.py): a
+          nearly orthographic camera over the map's area, with everything above the UAV ceiling (5 m) cut away - exactly the part
+          of the world the maps describe
+  right - the SEGMENTED map: the class our rules (v2) give every cell of the UAV's map. W4 uses the REAL map from the live
+          Gazebo mission; the other worlds have no saved live scan, so they use the offline scan simulator at low noise.
+
+COMPARISON PICTURES, media/classification/comparison/ - for every stress world (W1-W5) and two sensor-noise levels:
   1. TRUE HEIGHT     - the world's true UAV-view height field (maps/<world>_uavview.npz)
   2. GROUND TRUTH    - the class of every cell from the TRUE, complete, noise-free geometry, judged against the Jackal's MEASURED
                        limits (step11 X-A1: a 9 cm step crossed / 10 cm blocked, ramps to 35 deg). It uses the same thresholds as
@@ -14,6 +21,7 @@ Panels 3-5 are computed on the map the offline scan simulator builds (emap.scan_
 the same method as experiment X-C1 (src/nav/scripts/eval_terrain.py). W4 also gets the REAL scan from the live Gazebo mission.
 
 Usage: python3 render_classification.py [--worlds w1_house_site ...] [--out media/classification]
+(run render_world_topdown.py first; without a top-down picture a world gets only its comparison pictures)
 """
 from __future__ import annotations
 
@@ -117,13 +125,41 @@ def figure(title, extent, elev, truth, panels, out_png):
     plt.close(fig)
 
 
+def topdown_extent(topdown_png):
+    """[x0, x1, y0, y1] in world metres of a top-down picture (image up = +y, right = +x), from the .json that
+    render_world_topdown.py writes next to it."""
+    import json
+    return json.load(open(topdown_png[:-4] + ".json"))["extent"]
+
+
+def figure_pair(world, topdown_png, extent, tier, obs, scan_label, out_png):
+    """The main picture: real top-down view | segmented class map, side by side on the same axes."""
+    rgb = plt.imread(topdown_png)
+    fig, axes = plt.subplots(1, 2, figsize=(15, 7.6), constrained_layout=True)
+    axes[0].imshow(rgb, extent=topdown_extent(topdown_png), origin="upper")
+    axes[0].set_title("real top-down view (Gazebo camera; everything above 5 m cut away, as in the map)", fontsize=11)
+    axes[1].imshow(class_image(tier, obs), origin="lower", extent=extent, cmap=CLASS_CMAP, vmin=0, vmax=3, interpolation="nearest")
+    axes[1].set_title(f"segmented by our rules (v2)\n{scan_label}", fontsize=11)
+    for ax in axes:                                     # both panels show exactly the map's area
+        ax.set_xlim(extent[0], extent[1])
+        ax.set_ylim(extent[2], extent[3])
+        ax.set_aspect("equal")
+        ax.set_xlabel("x (m)")
+    axes[0].set_ylabel("y (m)")
+    fig.legend(handles=CLASS_LEGEND, loc="lower center", ncol=4, fontsize=11, bbox_to_anchor=(0.5, -0.06))
+    fig.suptitle(world, fontsize=14)
+    fig.savefig(out_png, dpi=100, bbox_inches="tight")
+    plt.close(fig)
+
+
 def main():
     a = argparse.ArgumentParser()
     a.add_argument("--worlds", nargs="*", default=WORLDS)
     a.add_argument("--out", default=os.path.join(REPO, "media", "classification"))
     a.add_argument("--stride", type=int, default=2)
     args = a.parse_args()
-    os.makedirs(args.out, exist_ok=True)
+    cmp_dir = os.path.join(args.out, "comparison")
+    os.makedirs(cmp_dir, exist_ok=True)
     rows = []
     for w in args.worlds:
         d = np.load(os.path.join(et.MAPS, f"{w}_uavview.npz"))
@@ -139,9 +175,11 @@ def main():
             label = f"sigma {na * 100:.0f} cm" + (f" + {nb} r^2" if nb else "")
             figure(f"{w} - simulated UAV scan, {level} noise ({label})", extent, elev, truth,
                    [("OLD rule (before step11)", old, obs), ("NEW rules v2 (today)", new, obs)],
-                   os.path.join(args.out, f"{w}_{level}_noise.png"))
+                   os.path.join(cmp_dir, f"{w}_{level}_noise.png"))
             for name, pred in (("old", old), ("new v2", new)):
                 rows.append((w, f"simulated, {level} noise", name, scores(truth, pred, obs), float(obs.mean())))
+            if level == "low":
+                main_pic = (new, obs, "simulated UAV scan (offline scan simulator, low noise)")
             print(w, level, "done", flush=True)
         if w == "w4_structure_decks":                                              # the REAL scan of the live Gazebo mission
             s = np.load(os.path.join(et.MAPS, f"{w}_uavscan.npz"))
@@ -152,16 +190,22 @@ def main():
             old, new = clf["old(default)"](se, sv, obs), clf["new"](se, sv, obs)
             figure(f"{w} - REAL UAV scan from the live Gazebo mission (emap)", extent, elev, truth,
                    [("OLD rule (before step11)", old, obs), ("NEW rules v2 (today)", new, obs)],
-                   os.path.join(args.out, f"{w}_real_scan.png"))
+                   os.path.join(cmp_dir, f"{w}_real_scan.png"))
             for name, pred in (("old", old), ("new v2", new)):
                 rows.append((w, "REAL Gazebo scan", name, scores(truth, pred, obs), float(obs.mean())))
-    with open(os.path.join(args.out, "scores.md"), "w") as f:
+            main_pic = (new, obs, "REAL UAV map from the live Gazebo mission")
+        td = os.path.join(args.out, "topdown", f"{w}.png")
+        if os.path.exists(td):
+            figure_pair(w, td, extent, *main_pic, os.path.join(args.out, f"{w}.png"))
+        else:
+            print(f"{w}: no {td} - run render_world_topdown.py first; main picture skipped", flush=True)
+    with open(os.path.join(cmp_dir, "scores.md"), "w") as f:
         f.write("| world | scan | rules | agreement | false LETHAL | MISSED LETHAL (per cell) | MISSED LETHAL (interior, > 1 cell away) | observed |\n"
                 "|---|---|---|---|---|---|---|---|\n")
         for w, scan, name, s, o in rows:
             f.write(f"| {w} | {scan} | {name} | {s['agree']:.1%} | {s['false_lethal']:.1%} | {s['missed_lethal']:.1%} | "
                     f"{s['missed_lethal_1cell']:.1%} | {o:.0%} |\n")
-    print(open(os.path.join(args.out, "scores.md")).read())
+    print(open(os.path.join(cmp_dir, "scores.md")).read())
 
 
 if __name__ == "__main__":

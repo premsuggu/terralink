@@ -1,6 +1,6 @@
 # TerraLink - TODO and experiment plan
 
-Last updated 2026-10-27. This file is the living list of what we still have to do and which experiments we will run.
+Last updated 2026-11-11 (checklist trimmed to what matters for finalising: EX-05, EX-08, N-04, C-07, U-01, S-01..S-03, R-02, R-04; semantic layer, SLAM, hardware, extra terrain worlds dropped). This file is the living list of what we still have to do and which experiments we will run.
 Status per item: `[ ]` open, `[~]` in progress, `[x]` done. Finished work is documented in `docs/work-docs/`; this file only
 points to it. Rules of the project that apply to everything below: unit test per step, no push without approval, no stale
 background processes after a run (kill, check, cap the run time, report progress), reuse an existing solution before building
@@ -19,11 +19,11 @@ one, document every step.
 | Block | State | Evidence / gap |
 |---|---|---|
 | Path planner (A*, route memory) | **solid** on a good map | W1-W4 reached with a complete map (`step09`); deterministic |
-| Navigation (Nav2 + follower) | works; not yet tuned for rough ground | circular 0.22 m footprint for a 0.51 m-long robot; DWB; 0.5 m doors fail |
-| UAV 2.5D map (`emap`) | good, **not consistent** | height drift (0.3 m over a patrol), variance used as roughness, noisy single-observation cells |
+| Navigation (Nav2 + follower) | works; Jackal footprint, rubble limit measured | min door 0.7 m clean (0.6 m marginal); crosses bumps up to 8 cm (C-07); opt-in safety gate + mission layer (step14) |
+| UAV 2.5D map (`emap`) | good | drift fix on slopes done (unit-tested, not re-measured on a long live patrol); noise compensation in place |
 | UGV 3D voxel map | good for now | radius-limited insertion; used only for tunnel/anomaly verification |
-| Cell classification | **weak - the main gap** | geometry thresholds only (slope, step, roughness); no ground type, no semantics |
-| Exploration without a UAV map | **open** | works offline (simulator), never reached live (W4 goal B) |
+| Cell classification | rule-based v2, **geometry only** | slope / step / roughness measured on the vehicle; no ground type or semantics (dropped from scope 2026-11-11) |
+| Exploration without a UAV map | **works offline, open live** | freespace everywhere: 19/30 offline, 0 target switches; W4 room B never reached live (3 runs) |
 
 ## 2. Cell classification (the biggest gap) - research done, plan below
 **What exists today** (`emap/traversability.py`, `nav/walkability.py`): per-cell slope, step height and roughness (height variance)
@@ -59,17 +59,7 @@ no handling of negative obstacles (holes, trench edges) beyond the step threshol
   compensation. Built: `ground_layer:=true` (separate ground map in the node, `nav/ground_layer.py` combination, `plan_blocked` event-driven re-plan, self-pollution fix
   at the start, camera tilt 0.6 -> 0.35 rad = 4x wider floor strip). **Live: W4 goal B (hidden dead-end room) reached for the first time (0.13 m, 878 sim s) - but 366 m driven, 89 re-plans:
   open = efficiency (EX-03: commit to targets, hysteresis on re-planning).** Still open: hysteresis for classes, `ground` clearance layer, a 3D lidar option.
-* [ ] **C-07 Measure the roughness limit on the vehicle** (drive W3's rubble field / ruts; `max_roughness_m` 0.06 is a guess) and the slope limit
-  on low-friction ground (needs C-02 friction patches). (The world maps and `scene.py` ground truth were regenerated with v2 on 2026-10-27, `scripts/reclassify_maps.py`; feasibility tables unchanged.)
-* [ ] **C-02 Terrain-test worlds with ground types.** Add visual + friction/softness differences to the worlds (gravel, mud/soft
-  patch, water puddle, grass) so classification has something to classify; keep the geometric truth map and add a *class truth map*.
-* [ ] **C-03 Semantic layer from RGB (UAV and UGV).** Candidates in order of effort: (a) a pre-trained off-road segmenter
-  (GANav on RUGD/RELLIS/GOOSE) -> class -> cost table; (b) WVN-style self-supervised traversability from the UGV's driving.
-  First check: do weights/code run under ROS 2 Humble and on this GPU (if any)? CPU-only is a hard constraint to confirm.
-* [ ] **C-04 Fuse geometry + semantics into one traversability layer** (`emap` layer, with confidence), consumed unchanged by
-  the A* planner (the planner only needs the walkable/cost masks).
-* [ ] **C-05 Compare with `elevation_mapping_cupy`'s ROS 2 port on the same worlds** (it already provides fusion + traversability
-  filters): decide keep-ours / adopt-theirs for the UAV map and classification.
+* [x] **C-07 Roughness limit on the vehicle** - measured 2026-11-11 in Gazebo (8 rubble lanes): bumps up to 8 cm crossed at full speed, from 10 cm blocked (= the 9 cm step limit); `max_roughness` 0.06 kept (0.04 would flag 3 cm map noise). `media/terrain/`, step14 section 6.
 * Experiments: **X-C1** classifier ablation on the four worlds + new terrain-test world (metric: fraction of ground-truth
   traversable cells classified walkable / non-traversable cells classified walkable, per class); **X-C2** end-to-end: same
   goals, success and path cost with geometry-only vs geometry+semantics.
@@ -101,9 +91,14 @@ ground layer switched off the hidden-island rule (`planner_node` merged it first
   still `viewpoints`), ground-layer confidence gate (`nav/ground_layer.py`, 0.15). Offline: W4 real scan, B in 98 m, 0 switches.
   **Live: 2 runs, room B NOT reached** (71 m stuck / 443 m, reached the room next to B in 300 s): the camera ground layer's false
   obstacles (flying pixels at door jambs) closed B's 1.0 m door. step12 section 7; videos `media/runs/w4_structure_decks_mission_freespace_*.mp4`.
-* [ ] **EX-05 Flying-pixel filter on the UGV depth image** (drop points at depth discontinuities before fusing the ground layer,
-  like PCL's ShadowPoints), then ONE live W4-B run. Awaiting approval.
-* [ ] **EX-04 STGPlanner skeleton idea on our 2D floor map** (corridors/doors): read its code, decide port vs. reimplement.
+* [x] **EX-05 Flying-pixel filter on the UGV depth image** - tried 2026-11-11, **discarded**: live W4 goal B still not reached (318 m, stuck along the north wall within 5 m), so no benefit; code removed. step14 section 5.
+* [x] **EX-06 Wall following / backtracking (user's idea, 2026-10-29), offline** - Bug1, Bug2 and a lidar "exit list" (best
+  first and depth-first) in `tests/nav/explore_wallfollow.py`, run in the simulator with NO UAV map and with W4's real map.
+  No UAV map, 10 reachable goals: freespace 10/10 (525 m), exit list best-first 10/10 (538 m), DFS 10/10 (1105 m), today's
+  planner 7/10 (gave up at W5 doors, stuck at W2-C), Bug1 1/10, Bug2 6/10. With a UAV map today's planner stays best. step13.
+* [x] **EX-07 No-UAV mode = freespace everywhere (code + offline results done 2026-11-11)** (step13 P1): today's planner falls back to viewpoints when there is no UAV
+  map. Awaiting approval; then one live run without the UAV.
+* [x] **EX-08 unknown-cell cost 1.5 ("skip a building with no opening")** - tried 2026-11-11, **discarded**: W4-D 48.6 -> 27.5 m but +240 m wasted on unreachable goals, same 19/30 goals reached. step14 section 4.
 * Experiment **X-E1 (done offline, step12):** W4 goals A-F, both maps, ground layer on/off, + W1/W2/W3/W5 regression:
   ours / freespace (cost 1, 2, 5) / island-only freespace / explore_lite (`src/nav/scripts/eval_exploration.py`).
 
@@ -112,43 +107,11 @@ ground layer switched off the hidden-island rule (`planner_node` merged it first
 * [x] **N-01 Footprint** (2026-10-26, `step10` section 6). Nav2 costmaps now use the Jackal's 0.51 x 0.43 m rectangle and a steeper
   inflation (10.0 / 0.45 m). New test world **W5 door gauntlet** (doors 1.2 ... 0.5 m). Measured minimum door for A* + Nav2: **0.7 m clean
   (15 s per door), 0.6 m marginal (195 s, 8 failed attempts), < 0.6 m refused by A***. W2 C, W3 A, W4 B (oracle) re-run: no regressions.
-* [ ] **N-02 Rough-terrain stability.** Build W3-like terrain with bumps/ruts (not only smooth slopes); drive with DWB vs
-  Nav2's MPPI controller; metric: tilt (roll/pitch RMS from the pose), time, slip, failures. Slope limits of the Jackal model.
-* [ ] **N-03 Skid-steer fidelity.** The 0.49 m effective separation was measured on flat ground; check on slopes and gravel
-  (friction scenarios from C-02).
-* [ ] **N-04 A* vs Nav2 disagreement on narrow gaps.** Reduced by N-01 but not closed: A* accepts a 0.6 m door that Nav2 passes only after 195 s.
-  Options: make A* refuse / price doors < 0.7 m (then re-check W2's 0.8 m lane), switch DWB's `BaseObstacle` to a footprint critic or MPPI,
-  mark a gap closed after repeated local failure. Test bed: W5 (goals 5-8).
-* [ ] **N-05 Check controller tolerance** for the UGV's higher mass/inertia (accelerations, `velocity_smoother`), now that the
-  vehicle is 16 kg instead of 2 kg.
-
-## 5. UAV map consistency (`emap`)
-* [ ] **U-01 Height drift.** `drift_compensation` slid the map by ~0.3 m over a long patrol -> turn it off (workaround) or fix.
-  Decide: keep ours or adopt `elevation_mapping_cupy`'s drift handling (C-05).
-* [ ] **U-02 Multi-pass consistency.** Same area scanned in two passes / two altitudes must give the same elevation (metric:
-  RMS height difference per cell). A fixed patrol pattern per world, saved.
-* [ ] **U-03 Scan quality settings.** Lane spacing / altitude / stride that give a usable map (6 m, 2 m lanes worked; higher or
-  sparser gave 57 % "lethal"). Document as a recommended mission profile.
-* [ ] **U-04 UAV map -> UGV hand-off check:** UGV-observed cells vs. UAV map disagreement (e.g. the 0.125 m camera error of the
-  old model, step10 pitfall 3) - add a consistency test.
-
-## 6. UGV 3D voxel map
-* [ ] **V-01** Nothing known to be broken. Re-validate on the tunnel world with the new camera mount (the depth camera now sees
-  0.17-0.74 m of floor from 0.155 m height; was 0.05 m). Re-check the radius-limited insertion on a long mission.
-
-## 7. Localisation and mapping on a real robot (not in the original list - flagged by us)
-The simulation uses **ground-truth odometry** (`/ugv/odom_ground_truth`) for the UGV, the voxel map and the floor map. A real robot
-needs lidar-inertial odometry and UAV-to-UGV map alignment.
-* [ ] **L-01 Research and reuse**: FAST-LIO2 / LIO-SAM / slam_toolbox (2D) - ROS 2 Humble status, what they achieved, CPU needs.
-* [ ] **L-02 Experiment X-L1:** replace ground-truth odometry by slam_toolbox (2D lidar) in one world; measure the drift against
-  ground truth and its effect on goal-reaching error. Then UAV-map alignment (initial pose + scan matching to the 2.5D map).
-
-## 8. Other items we may have forgotten (candidates; to be prioritised with the user)
-* [ ] **S-01 Safety layer:** stop on a collision/cliff, geofence, battery-aware return, e-stop topic.
-* [ ] **S-02 Communication loss** UAV <-> UGV (the UGV must finish on the last map).
-* [ ] **S-03 Mission layer:** a goal list / patrol / return-to-base interface instead of one `goal_x, goal_y`.
-* [ ] **S-04 Payload tasks** (what the UGV carries or does at the goal) - needs the use-case list below.
-* [ ] **S-05 Real-time performance** of the whole stack on target hardware (CPU fusion is ~0.25x real time today).
+* [x] **N-04 A* vs Nav2 on narrow doors** - decided 2026-11-11: **accepted limitation** (min door 0.7 m clean, 0.6 m marginal, 0.55 m refused). step14 section 7.
+* [x] **U-01 Height drift** - fixed 2026-11-11: only flat cells (3x3 relief < 5 cm) are references + 1 cm deadband; phantom drift on slopes removed (unit tests); not re-measured on a long live patrol. step14 section 2.
+* [x] **S-01 Safety layer** - done 2026-11-11 (`nav/safety.py`, `safety_node`, opt-in `enable_safety:=true`; geofence, tilt, obstacle stop with velocity gate, driving-budget return). step14 section 3.
+* [x] **S-02 Communication loss** - done 2026-11-11: link-lost flag after 5 s, finish on the last map, RETURN after 120 s (`nav/safety.py`).
+* [x] **S-03 Mission layer** - done 2026-11-11 (`nav/mission.py`, `mission_node`, `mission_goals:=...`); live on W2. step14 sections 3 and 8.
 * Out of scope: dynamic obstacles (other team).
 
 ## 9. Use cases and readiness (to finish with the user; see the chat analysis of 2026-10-26)
@@ -164,9 +127,8 @@ needs lidar-inertial odometry and UAV-to-UGV map alignment.
 ## 10. Housekeeping
 * [x] **R-01 Re-ran W2, W3, W4 (complete map) and W1 with the Jackal model**; videos regenerated with the to-scale Jackal drawing (results in
   `step10` section 6.5; W1 row there).
-* [ ] **R-02 Regenerate the technical report** (`docs/build_report.py`) after R-01 and the classification work.
-* [ ] **R-03 Write the learning-style tutorial** for the lidar floor map / hidden islands / skid-steer (docs/work-docs/learning/).
-* [ ] **R-04 Untested snippet** in `docs/RUN.md` (offline simulator) - run it once.
+* [x] **R-02 Technical report regenerated** 2026-11-11 (`python3 docs/build_report.py`); note: the generator's text was not extended with the step14 results - see `step14_finalisation.md`.
+* [x] **R-04 Untested snippet in `docs/RUN.md`** - run 2026-11-11 exactly as written: goal reached, 120 m, 560 sim s.
 * Done and committed: stress worlds + videos + hidden-interior experiment (commit `1b6fdf2`, not yet pushed).
 * Done and committed: Jackal UGV model (`d8c59bb`; `step10`, `tests/nav/test_ugv_model.py`, `tests/nav/integration/`).
 * Done and committed: footprint fix N-01 (`118c8a8`).

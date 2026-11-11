@@ -411,6 +411,11 @@ class WaypointFollower(Node):
         # first - a point close to any wall will fail exactly the same way.
         self.declare_parameter("goal_x", 1.7)
         self.declare_parameter("goal_y", -0.5)
+        # S-03 mission layer (opt-in): a topic with the CURRENT goal (geometry_msgs/PoseStamped, published by mission_node). A new goal
+        # replaces goal_x/goal_y and restarts planning. "" = off (the fixed goal above, the old behaviour). If the planner finds no
+        # route to the goal `goal_failed_after` times in a row, /mission/goal_failed (Bool) tells the mission to skip it.
+        self.declare_parameter("goal_topic", "")
+        self.declare_parameter("goal_failed_after", 8)
         self.declare_parameter("waypoint_reached_radius_m", 0.5)
         self.declare_parameter("plan_frame", "iris_quad/odom")
         # The frame this node's own position is looked up in, via TF, rather
@@ -601,6 +606,12 @@ class WaypointFollower(Node):
 
         odom_topic = self.get_parameter("odom_topic").value
         self._odom_sub = self.create_subscription(Odometry, odom_topic, self._odom_callback, 10)
+        self._goal_failed_after = int(self.get_parameter("goal_failed_after").value)
+        self._no_plan_count = 0
+        self._goal_failed_pub = self.create_publisher(Bool, "/mission/goal_failed", 10)
+        goal_topic = str(self.get_parameter("goal_topic").value)
+        if goal_topic:
+            self._mission_goal_sub = self.create_subscription(PoseStamped, goal_topic, self._mission_goal_callback, 10)
         self._goal_pub = self.create_publisher(PoseStamped, "/goal_pose", 10)
         self._plan_client = self.create_client(GetPlan, "get_plan")
         self._frontier_sub = self.create_subscription(Bool, "plan_has_frontier", self._frontier_callback, 10)
@@ -621,6 +632,19 @@ class WaypointFollower(Node):
         # Set when stuck recovery asks for a plan, so that an UNCHANGED answer
         # still resends the current goal (see `_goal_to_resend`).
         self._resend_goal_on_equal_plan = False
+
+    def _mission_goal_callback(self, msg: PoseStamped) -> None:
+        """A (new) goal from the mission layer: same goal again = ignore (mission_node repeats it every second); different = restart."""
+        gx, gy = msg.pose.position.x, msg.pose.position.y
+        if abs(gx - self._goal_x) < 1e-3 and abs(gy - self._goal_y) < 1e-3:
+            return
+        self.get_logger().info(f"mission goal -> ({gx:.2f}, {gy:.2f}); re-planning from scratch.")
+        self._goal_x, self._goal_y = gx, gy
+        self._waypoints = None
+        self._next_index = 0
+        self._no_plan_count = 0
+        self._requested = False
+        self._last_request_time = None
 
     def _plan_blocked_callback(self, msg: Bool) -> None:
         """planner_node says the plan we are driving now crosses known-blocked cells (see enable_blocked_replan)."""
@@ -901,6 +925,11 @@ class WaypointFollower(Node):
                 # Keep the original retry-on-next-odom-message behavior.
                 self.get_logger().warn("get_plan returned no path - retrying on the next odom message.")
                 self._requested = False  # allow _odom_callback to try again
+                self._no_plan_count += 1
+                if str(self.get_parameter("goal_topic").value) and self._no_plan_count >= self._goal_failed_after:
+                    self._no_plan_count = 0
+                    self.get_logger().warn("no route to the mission goal after repeated attempts - reporting it as failed.")
+                    self._goal_failed_pub.publish(Bool(data=True))
             else:
                 # A background frontier-replan attempt failed to find
                 # anything (e.g. the tunnel still hasn't been resolved with

@@ -37,7 +37,7 @@ class TerrainParams:
     climbed every ramp up to 35 deg (slope 0.70) at friction 1.0, which real wet ground will not give."""
     max_slope: float = 0.35          # rise/run at which the vehicle should not drive (~19 deg; measured capability >= 0.70)
     max_step: float = 0.09           # m, height jump over 0.3 m above which the vehicle cannot cross (measured: 9 cm ok, 10 cm blocked)
-    max_roughness: float = 0.06      # m, residual std around the local plane (0.5 m window); not yet measured on the vehicle
+    max_roughness: float = 0.06      # m, residual std around the local plane (0.5 m window); C-07 (step15): kept - the step rule already blocks what the Jackal cannot cross, 0.04 flags 3 cm map noise
     difficult_fraction: float = 0.5  # hazard above this fraction of a limit = DIFFICULT (same as the old "half the limit")
     plane_window_m: float = 0.5      # window of the plane fit (slope + roughness)
     step_window_cells: int = 3       # window of the step test (0.3 m at 0.1 m cells)

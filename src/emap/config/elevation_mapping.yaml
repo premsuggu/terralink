@@ -65,4 +65,7 @@ elevation_mapping_node:
     # adds an artificial, slowly-growing Z offset (meters/second) to
     # demonstrate the correction actually working live. Leave at 0.0 for
     # normal operation.
+    # U-01: flat-cell references only + deadband (see emap/drift.py)
+    drift_max_local_relief: 0.05
+    drift_deadband: 0.01
     synthetic_drift_z_rate: 0.0

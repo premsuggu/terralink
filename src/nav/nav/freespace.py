@@ -19,7 +19,7 @@ Offline result on W4's real scan: every feasible goal reached, 0 target switches
                      x unknown_cost        if nobody has observed it         (1 = pure freespace; Nav2 NavFn is ~5)
                      x stuck penalty       near where the robot got stuck    (`nav.stuck_feedback`)
 
-Unknown cost 1 was best offline: higher values prefer known ground and toured the building before entering (B: 183-204 m).
+Unknown cost 1 stays the default. EX-08 (2026-11-11) tried 1.2 and 1.5: 1.5 cut W4-D from 48.6 to 27.5 m but made the planner give up much later on unreachable goals (W1-B 75 -> 242 m, +240 m in total over 11 unreachable goals) with the same 19/30 goals reached - net negative, discarded. Much higher values (2-5) toured the building before entering (B: 183-204 m).
 Known obstacles are inflated exactly like A*'s first pass; unknown cells are NOT obstacles (they might be open).
 
 WHERE IT IS USED
@@ -124,9 +124,15 @@ class IslandStrategyPlanner:
 
     `outer` is the GoalIslandPlanner; it sets `last_zone` before calling the inner planner, which is how this class knows.
     `last_note` mirrors whichever planner answered (planner_node logs it).
+
+    no_uav_fraction (EX-07, step13): when the UAV observed less than this fraction of the grid (0.02 = 2 %) there is no UAV map to
+        speak of - the UGV explores alone - and freespace planning is used EVERYWHERE, not only under roofs. Offline (10 goals
+        in W2/W4/W5, no UAV map) freespace reached 10/10, the viewpoint planner 7/10. With a real UAV map the viewpoint planner
+        stays better, so the switch is on the map, not global. 0 disables it.
     """
 
-    def __init__(self, global_planner, freespace: FreespacePlanner | None = None):
+    def __init__(self, global_planner, freespace: FreespacePlanner | None = None, *, no_uav_fraction: float = 0.02):
+        self.no_uav_fraction = no_uav_fraction
         self.global_planner = global_planner
         self.freespace = freespace if freespace is not None else FreespacePlanner(global_planner.params, stuck=global_planner.stuck)
         self.outer = None
@@ -134,7 +140,9 @@ class IslandStrategyPlanner:
 
     def plan(self, ctx, start_xy, goal_xy, now=None):
         under_roof = self.outer is not None and self.outer.last_zone is not None
-        use = self.freespace if under_roof else self.global_planner
+        no_uav = (self.outer is not None and self.no_uav_fraction > 0
+                  and getattr(self.outer, "last_uav_fraction", 1.0) < self.no_uav_fraction)
+        use = self.freespace if (under_roof or no_uav) else self.global_planner
         result = use.plan(ctx, start_xy, goal_xy, now=now)
         self.last_note = use.last_note
         return result

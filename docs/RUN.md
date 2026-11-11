@@ -125,7 +125,8 @@ python3 src/nav/scripts/reclassify_maps.py [--check]                            
 # the whole pipeline with a real UAV scan + the ground layer (~35 min wall + the video):
 EXTRA="ground_layer:=true island_strategy:=freespace" MAX_SIM=900 src/nav/scripts/run_world_mission.sh w4_structure_decks -21.5 -6 -12 8 22 16 "title" 50.0 /tmp/w4_ground
 #   video at 4x speed by default (SPEED=1 for real time); VIDEO=<path> to name it
-python3 src/nav/scripts/render_classification.py                                   # media/classification/: ground truth vs old/new rules, all worlds (~1 h, W1 is big)
+python3 src/nav/scripts/render_world_topdown.py                                    # media/classification/topdown/: real top-down views rendered by Gazebo (~1 min each)
+python3 src/nav/scripts/render_classification.py                                   # media/classification/: real view | segmented map per world, comparisons in comparison/ (~10 min)
 Old classifier for an A/B comparison: `terrain_classifier:=v1` on `elevation_mapping_node` (then `max_roughness` matters again).
 
 **Exploration under roofs (step12)** - offline comparison of strategies in the exploration simulator (5-40 s per goal):

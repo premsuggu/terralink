@@ -108,3 +108,42 @@ def test_island_strategy_uses_freespace_only_under_a_roof():
     assert inner.plan(None, (0, 0), (1, 1)) == "global" and inner.last_note == "global"
     inner.outer.last_zone = np.ones((2, 2), bool)               # GoalIslandPlanner has hidden an island
     assert inner.plan(None, (0, 0), (1, 1)) == "freespace" and inner.last_note == "freespace"
+
+
+class _FakeOuter:
+    """Stands in for GoalIslandPlanner: just the two attributes IslandStrategyPlanner reads."""
+
+    def __init__(self, zone=None, uav_fraction=1.0):
+        self.last_zone = zone
+        self.last_uav_fraction = uav_fraction
+
+
+class _Recorder:
+    """A planner that only records that it was asked."""
+
+    def __init__(self, name):
+        self.name, self.last_note, self.params, self.stuck = name, name, None, None
+
+    def plan(self, ctx, start, goal, now=None):
+        return self.name
+
+
+def _strategy(uav_fraction, zone=None, **kw):
+    s = IslandStrategyPlanner(_Recorder("global"), freespace=_Recorder("free"), **kw)
+    s.outer = _FakeOuter(zone, uav_fraction)
+    return s
+
+
+def test_no_uav_map_switches_to_freespace_everywhere():
+    """EX-07: with (almost) nothing observed by the UAV the UGV explores alone, so 'unknown = open' planning is used in the open too."""
+    assert _strategy(0.0).plan(None, (0, 0), (1, 1)) == "free"
+    assert _strategy(0.01).plan(None, (0, 0), (1, 1)) == "free"
+
+
+def test_with_a_uav_map_the_normal_planner_is_kept_outside_roofs():
+    assert _strategy(0.4).plan(None, (0, 0), (1, 1)) == "global"
+    assert _strategy(0.4, zone=np.ones((2, 2), bool)).plan(None, (0, 0), (1, 1)) == "free"     # under a roof: still freespace
+
+
+def test_no_uav_switch_can_be_disabled():
+    assert _strategy(0.0, no_uav_fraction=0.0).plan(None, (0, 0), (1, 1)) == "global"

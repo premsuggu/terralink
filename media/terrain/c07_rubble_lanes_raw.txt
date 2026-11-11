@@ -1,0 +1,9 @@
+speed 0.5 m/s | H cm | map roughness med / p90 (m) | x_max | t_cross (s) | max roll / pitch (deg) | verdict
+H  2 cm | rough 0.005 / 0.008 | x 19.92 | t  18.8 | roll   3 pitch   5 | crossed
+H  4 cm | rough 0.011 / 0.015 | x 19.76 | t  19.1 | roll   5 pitch  10 | crossed
+H  6 cm | rough 0.019 / 0.024 | x 18.84 | t  20.4 | roll   8 pitch  16 | crossed
+H  8 cm | rough 0.020 / 0.029 | x 18.41 | t  20.6 | roll   8 pitch  18 | crossed
+H 10 cm | rough 0.029 / 0.038 | x  3.84 | t   nan | roll  13 pitch  22 | BLOCKED
+H 12 cm | rough 0.035 / 0.046 | x  3.17 | t   nan | roll   7 pitch  24 | BLOCKED
+H 16 cm | rough 0.045 / 0.064 | x  4.26 | t   nan | roll   5 pitch  12 | BLOCKED
+H 20 cm | rough 0.056 / 0.078 | x  2.88 | t   nan | roll   0 pitch   4 | BLOCKED
