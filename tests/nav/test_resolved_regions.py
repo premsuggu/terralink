@@ -12,7 +12,7 @@ from nav.resolved_regions import ResolvedRegion, ResolvedRegionStore
 
 def _grid(n=20, resolution=0.5):
     # A trivial (n, n) all-False walkable/anomaly pair, centered on world
-    # (0, 0) - the same convention nav.prm_planner's own tests set up.
+    # (0, 0) - the same convention the planner tests use.
     walkable = np.zeros((n, n), dtype=bool)
     anomaly = np.zeros((n, n), dtype=bool)
     return walkable, anomaly, resolution, 0.0, 0.0

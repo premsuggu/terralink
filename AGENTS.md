@@ -10,7 +10,7 @@
 |-----------|---------|
 | **1. Geometric** (2.5D elevation mapping) | Realised as our own package `emap` (+ `nav`). Reference copy removed. |
 | **2. Semantic** (AI vision to costmap) | Not started (future package `terralink_semantic`). |
-| **3. Baseline** (OpenCV color filter + PRM) | Retired; its PRM idea lives on in `nav/prm_planner.py`. Reference copy removed. |
+| **3. Baseline** (OpenCV color filter + PRM) | Retired; its PRM idea was later replaced by A* (`nav/astar_planner.py`) and the PRM code removed (step 15, last in commit `efd5408`). Reference copy removed. |
 
 ---
 
@@ -67,14 +67,13 @@ terralink/
         ├── worlds/room_maze.world
         ├── resource/
         └── nav/
-            ├── prm_planner.py         # PRM path planning
-            ├── astar_planner.py       # A* grid planner (opt-in: planner_type:=astar)
+            ├── astar_planner.py       # A* grid planner (the only global planner)
             ├── global_planner.py      # plan -> route memory -> exploration decision (shared by node + replay)
             ├── plan_memory.py / exploration.py / mask_latch.py / map_growth.py / stuck_feedback.py
             ├── replay.py              # offline replay of planning on saved maps (no simulator)
             ├── autopilot.py           # UAV autonomous flight logic
             ├── uav_autopilot_node.py  # UAV autopilot ROS node
-            ├── planner_node.py        # PRM planner ROS node
+            ├── planner_node.py        # global planner ROS node (A*)
             ├── waypoint_follower.py   # UGV waypoint following
             ├── safety.py / safety_node.py     # safety layer (S-01/S-02), opt-in
             ├── mission.py / mission_node.py   # mission layer (S-03), opt-in
@@ -135,16 +134,16 @@ ros2 launch nav nav_sim.launch.py headless:=true autonomous_uav:=true
 |------|-------|
 | 0s | Gazebo starts (`room_maze.world`) |
 | 5s | Bridges, TFs, elevation mapping, UAV autopilot start |
-| 9s | Nav2, PRM planner, UGV waypoint follower start |
+| 9s | Nav2, A* planner, UGV waypoint follower start |
 
-Optional: `planner_type:=astar` (A* planner; default `prm`). `tunnel_demo.launch.py` also takes `enable_exploration`, `anomaly_hold_sec`, `wait_for_mapping`, `stuck_feedback`. To test planning WITHOUT re-running the UAV scan, save a map once (`src/nav/scripts/save_map_snapshot.py`) and either re-plan offline (`replay_plan.py` / `replay_sequence.py`) or run the live Nav2/follower stack from the planning stage with `tunnel_demo.launch.py map_snapshot:=<file.npz>` (fixture: `tests/nav/fixtures/tunnel_test_parked.npz`) - see `docs/work-docs/nav/step07_astar_planner.md`.
+Optional: `tunnel_demo.launch.py` also takes `enable_exploration`, `anomaly_hold_sec`, `wait_for_mapping`, `stuck_feedback`. To test planning WITHOUT re-running the UAV scan, save a map once (`src/nav/scripts/save_map_snapshot.py`) and either re-plan offline (`replay_plan.py` / `replay_sequence.py`) or run the live Nav2/follower stack from the planning stage with `tunnel_demo.launch.py map_snapshot:=<file.npz>` (fixture: `tests/nav/fixtures/tunnel_test_parked.npz`) - see `docs/work-docs/nav/step07_astar_planner.md`.
 
 **Verification Checklist:**
 - [ ] Gazebo loads `room_maze.world`
 - [ ] UAV (`iris_quad`) and UGV (`nav_ugv`) visible
 - [ ] `/elevation_map` publishing GridMap
 - [ ] Nav2 costmap receives UGV lidar scans (no TF drops)
-- [ ] PRM planner finds path through traversable cells
+- [ ] A* planner finds path through traversable cells
 - [ ] UGV follows waypoints to goal
 
 Full details in `docs/work-docs/nav/IMPLEMENTATION_PLAN.md` and per-step docs.
@@ -156,7 +155,7 @@ Full details in `docs/work-docs/nav/IMPLEMENTATION_PLAN.md` and per-step docs.
 | Executable | Package | Description |
 |------------|---------|-------------|
 | `elevation_mapping_node` | emap | Elevation mapping ROS node (fusion -> `/elevation_map`) |
-| `planner_node` | nav | Global planner ROS node (PRM default, `planner_type:=astar`) |
+| `planner_node` | nav | Global planner ROS node (A*) |
 | `map_replay_node` | nav | Publishes a saved map as `/elevation_map` (start-at-planning mode) |
 | `uav_autopilot_node` | nav | UAV autopilot ROS node |
 | `waypoint_follower` | nav | UGV waypoint following |
@@ -171,7 +170,7 @@ Full details in `docs/work-docs/nav/IMPLEMENTATION_PLAN.md` and per-step docs.
 cd tests/nav
 python3 -m pytest -v
 ```
-All algorithm-level tests (PRM planner, autopilot, walkability) live here and require no ROS/Gazebo - see `docs/work-docs/nav/IMPLEMENTATION_PLAN.md` for what each covers.
+All algorithm-level tests (A* planner, autopilot, walkability) live here and require no ROS/Gazebo - see `docs/work-docs/nav/IMPLEMENTATION_PLAN.md` for what each covers.
 
 ---
 

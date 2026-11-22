@@ -1,6 +1,6 @@
 """nav's own top-level simulation launch: the UAV (emap's iris_quad +
 depth camera + elevation_mapping_node), the UGV (nav_ugv, driven by Nav2),
-and the PRM planning layer connecting them, all in worlds/room_maze.world.
+and the A* planning layer connecting them, all in worlds/room_maze.world.
 
 This does NOT `IncludeLaunchDescription` emap's own uav_sim.launch.py,
 even though most of what it needs (gz_sim launch, the resource-path/
@@ -77,13 +77,6 @@ def generate_launch_description():
                     '(no /cmd_vel needed from you) to scan the room and build the elevation map.'
     )
     autonomous_uav = LaunchConfiguration('autonomous_uav')
-
-    # Which global planner answers get_plan: 'prm' (original, default) or
-    # 'astar' (see nav/astar_planner.py). Opt-in until verified live.
-    planner_type_arg = DeclareLaunchArgument(
-        'planner_type', default_value='prm',
-        description="Global planner: 'prm' (default) or 'astar'."
-    )
 
     # model://nav_ugv (this package) and model://iris_quad (emap) both need
     # to resolve - same pattern as emap/launch/uav_sim.launch.py's own
@@ -259,13 +252,12 @@ def generate_launch_description():
         package='nav',
         executable='planner_node',
         name='planner_node',
-        parameters=[{'planner_type': LaunchConfiguration('planner_type')}],
         output='screen',
     )
-    prm_waypoint_follower = Node(
+    ugv_waypoint_follower = Node(
         package='nav',
         executable='waypoint_follower',
-        name='prm_waypoint_follower',
+        name='ugv_waypoint_follower',
         parameters=[{'goal_x': LaunchConfiguration('goal_x'), 'goal_y': LaunchConfiguration('goal_y')}],
         output='screen',
     )
@@ -300,14 +292,13 @@ def generate_launch_description():
         uav_autopilot_node,
     ])
     nav_layer_group = TimerAction(period=9.0, actions=[
-        nav2_launch, planner_node, prm_waypoint_follower,
+        nav2_launch, planner_node, ugv_waypoint_follower,
     ])
 
     return LaunchDescription([
         headless_arg,
         goal_x_arg,
         goal_y_arg,
-        planner_type_arg,
         autonomous_uav_arg,
         resource_path,
         force_software_gl,

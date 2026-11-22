@@ -98,7 +98,7 @@ def main():
     for name, g in goals:
         row = {}
         for k in ("truth", "old", "new"):
-            r = run_plan(maps[k], masks[k], start, g, planner="astar", params=astar_planner.PlannerParams())
+            r = run_plan(maps[k], masks[k], start, g, params=astar_planner.PlannerParams())
             if r.valid and len(r.waypoints) > 1:
                 pts = np.asarray(r.waypoints, float)
                 L = float(np.hypot(*np.diff(pts, axis=0).T).sum())

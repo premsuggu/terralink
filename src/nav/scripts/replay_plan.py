@@ -6,7 +6,6 @@
 
 Prints the waypoints, which segments are uncertain, and route-quality numbers
 (length vs straight line, turning, clearance), and optionally draws the route.
-Use `--planner prm` to see the old planner's route on the same map.
 
 Snapshots come from `save_map_snapshot.py` (one live run, once).
 """
@@ -32,7 +31,6 @@ def main(argv=None) -> int:
     ap.add_argument("--snapshot", required=True, help=".npz from save_map_snapshot.py")
     ap.add_argument("--start", nargs=2, type=float, required=True, metavar=("X", "Y"))
     ap.add_argument("--goal", nargs=2, type=float, required=True, metavar=("X", "Y"))
-    ap.add_argument("--planner", choices=["astar", "prm"], default="astar")
     ap.add_argument("--frontier", action="store_true", help="allow tentative routes through unobserved cells")
     ap.add_argument("--anomaly", action="store_true", help="allow tentative routes through suspected-anomaly cells")
     ap.add_argument("--frontier-min-width", type=float, default=0.0, help="drop frontier strips thinner than this [m] (0.44 = robot width)")
@@ -54,7 +52,7 @@ def main(argv=None) -> int:
     params = astar_planner.PlannerParams(**({"standoff_m": args.standoff} if args.standoff is not None else {}))
 
     start, goal = tuple(args.start), tuple(args.goal)
-    result = run_plan(snap, masks, start, goal, planner=args.planner, explore=args.explore, params=params)
+    result = run_plan(snap, masks, start, goal, explore=args.explore, params=params)
 
     print(f"map: {snap.shape[0]}x{snap.shape[1]} cells @ {snap.resolution} m, centre ({snap.center_x}, {snap.center_y})")
     if not result.valid:
@@ -73,7 +71,7 @@ def main(argv=None) -> int:
               f"min clearance {m.min_clearance_m:.2f} m")
     if args.png:
         render_png(args.png, snap, masks, start, goal, result,
-                   title=f"{args.planner}: {Path(args.snapshot).name}", crop=tuple(args.crop) if args.crop else None)
+                   title=f"astar: {Path(args.snapshot).name}", crop=tuple(args.crop) if args.crop else None)
         print(f"wrote {args.png}")
     return 0 if result.valid else 1
 

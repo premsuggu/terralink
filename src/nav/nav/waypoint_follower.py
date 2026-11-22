@@ -18,7 +18,7 @@ reused as instructed, only the service interface changed from d3's custom
 
 A later, OFF-BY-DEFAULT addition (`enable_frontier_replan`): when the plan
 being followed was only a tentative guess through unobserved "frontier"
-territory (see `nav.prm_planner`/`nav.walkability` and
+territory (see `nav.astar_planner`/`nav.walkability` and
 docs/work-docs/nav/step05_frontier_tunnel_navigation.md - e.g. a tunnel
 whose interior the UAV can never see from overhead), this node periodically
 asks `planner_node` for a fresh plan rather than trusting that one guess for
@@ -34,7 +34,7 @@ Phase 6 acceptance run where this was NOT yet true and the UGV's mission
 silently stalled with no recovery once the frontier flag alone had resolved.
 
 A step06 Phase 4 addition, also OFF-BY-DEFAULT (`enable_voxel_verification`):
-a plan flagged `plan_has_anomaly` (see `nav.prm_planner`/`nav.anomaly` and
+a plan flagged `plan_has_anomaly` (see `nav.astar_planner`/`nav.anomaly` and
 docs/work-docs/nav/step06_hybrid_3d_voxel_navigation.md) is still just a
 hopeful GUESS that a suspected data-fusion artifact (e.g. a tunnel roof
 wrongly read as a solid LETHAL step) is actually crossable - nothing has
@@ -104,7 +104,7 @@ read `x=3.205` at the SAME instant `tf2_echo iris_quad/odom
 nav_ugv/base_link` read `x=0.205` - an exact, constant +3.0 offset, matching
 the spawn pose precisely). Using the raw topic value as if it were already
 in `plan_frame` corrupted two things at once: (1) `_request_plan`'s `start`
-pose, which is what `prm_planner` anchors the FIRST roadmap node to - so
+pose, which is what the removed PRM planner anchored its FIRST roadmap node to - so
 every plan's own waypoints[0] silently inherited this same offset, which
 (when re-published as an absolute `/goal_pose` Nav2 correctly executes in
 the REAL world frame) still drove genuine progress, by coincidence, as long
@@ -156,7 +156,7 @@ from std_msgs.msg import Bool, Float64MultiArray, String
 def _should_replan(now: float, last_replan_time: float | None, interval_sec: float) -> bool:
     """Pure cooldown check, pulled out of the node so it's testable without
     ROS - same "extract the plain logic" discipline `nav.autopilot`/
-    `nav.prm_planner` already follow. True the first time (no replan has
+    `nav.astar_planner` already follow. True the first time (no replan has
     happened yet), then True again only once `interval_sec` has passed -
     the SAME pattern `_retry_interval_sec` already uses for the initial
     get_plan retry loop below, reused here for periodic re-planning instead.
@@ -277,7 +277,7 @@ def _skip_reached_leading_waypoints(
     step06 Phase 6 ACTUAL root cause of "the UGV moves here and there and
     just stops" (found live after two other theories - CPU/physics stall,
     then unseeded PRM randomness - didn't survive checking the log): every
-    `nav.prm_planner.plan()` result's waypoint 0 is always ~the robot's own
+    the old PRM planner's waypoint 0 is always ~the robot's own
     current position (`_request_plan` sets `request.start` to wherever the
     robot currently is), so the OLD code always published it as a real goal
     first. Live GUI-mode log, one full cycle:
@@ -386,12 +386,12 @@ def _segment_bounding_box(
 
 class WaypointFollower(Node):
     def __init__(self):
-        # Named "prm_waypoint_follower", not "waypoint_follower" - nav2's own
+        # Named "ugv_waypoint_follower", not "waypoint_follower" - nav2's own
         # bringup already runs an unrelated node literally named
         # "waypoint_follower" (nav2_waypoint_follower's FollowWaypoints
         # action server, part of the standard Nav2 stack this package
         # includes) - reusing that name here would collide in the ROS graph.
-        super().__init__("prm_waypoint_follower")
+        super().__init__("ugv_waypoint_follower")
 
         self.declare_parameter("odom_topic", "/ugv/odom")
         # REAL BUG FOUND LIVE: (4.0, 0.0) - this node's original default -
@@ -430,7 +430,7 @@ class WaypointFollower(Node):
         # docs/work-docs/nav/step05_frontier_tunnel_navigation.md: a plan
         # that had to cross a "frontier" cell (unobserved territory the
         # UAV's overhead camera structurally cannot see into, e.g. a
-        # tunnel's interior - see nav.prm_planner/nav.walkability) is only
+        # tunnel's interior - see nav.astar_planner/nav.walkability) is only
         # ever a tentative GUESS, not a confirmed-safe route. Rather than
         # trust that one guess for the rest of the mission, this node keeps
         # asking for a fresh plan every `frontier_replan_interval_sec` while

@@ -128,7 +128,7 @@ def main(argv=None) -> int:
         route = np.zeros((0, 2))
     else:           # a run on a known map: the offline A* route on the same map is what the planner was given
         plan = run_plan(snap, build_masks(snap, use_frontier=False, use_anomaly=False, resolved=[], frontier_min_width_m=0.0),
-                        tuple(a.start), tuple(a.goal), planner="astar", explore=False)
+                        tuple(a.start), tuple(a.goal), explore=False)
         route = np.array(plan.waypoints) if plan.valid else np.zeros((0, 2))
     plan_times = np.array([p[0] for p in plans])
 

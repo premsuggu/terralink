@@ -31,16 +31,16 @@ Verify: `ros2 topic hz /elevation_map` (GridMap layers: elevation, variance, is_
 # Hands-off demo in the maze world (UAV patrols and maps, UGV plans and drives)
 ros2 launch nav nav_sim.launch.py headless:=false autonomous_uav:=true goal_x:=1.7 goal_y:=-0.5
 
-# Tunnel demo (occluded passage), PRM planner (default) or A*
+# Tunnel demo (occluded passage); the global planner is A* (the PRM planner was removed, step 15)
 ros2 launch nav tunnel_demo.launch.py headless:=true
-ros2 launch nav tunnel_demo.launch.py headless:=true planner_type:=astar wait_for_mapping:=true anomaly_hold_sec:=30
+ros2 launch nav tunnel_demo.launch.py headless:=true wait_for_mapping:=true anomaly_hold_sec:=30
 ```
 Launch sequence and options: `nav_sim.launch.py` docstring; planner options: `docs/work-docs/nav/step07_astar_planner.md`.
 
 ### Skip the UAV scan (start at the planning stage)
 
 ```bash
-ros2 launch nav tunnel_demo.launch.py headless:=true planner_type:=astar \
+ros2 launch nav tunnel_demo.launch.py headless:=true \
     map_snapshot:=$PWD/tests/nav/fixtures/tunnel_test_parked.npz
 ```
 
@@ -50,7 +50,6 @@ ros2 launch nav tunnel_demo.launch.py headless:=true planner_type:=astar \
 export PYTHONPATH=src/nav:src/emap
 python3 src/nav/scripts/replay_plan.py --snapshot tests/nav/fixtures/tunnel_test_parked.npz \
     --start -3 0 --goal 3 0 --anomaly --frontier --frontier-min-width 0.44
-python3 src/nav/scripts/replay_plan.py ... --planner prm      # the PRM planner on the same map
 ```
 
 ### Record and draw a run (where did the UGV go, which plans did it get)
@@ -67,7 +66,7 @@ Images from the 12 runs of step 08 are in `media/figures/path_comparison/`; deta
 
 ```bash
 source /opt/ros/humble/setup.bash
-(cd tests/nav && python3 -m pytest -q)                          # 405 tests
+(cd tests/nav && python3 -m pytest -q)                          # 485 tests
 cd tests/emap && for f in test_*.py; do python3 -m pytest -q $f; done   # 44 CPU tests; run file by file
 ```
 Running `tests/emap` as one folder collects as "skipped" here because the GPU test module's cupy import fails against the installed numpy.

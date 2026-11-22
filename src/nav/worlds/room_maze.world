@@ -788,7 +788,7 @@
          for a real slope/step-height reading) - meaning nav_ugv could NEVER
          get a valid PRM plan, because planner_node.py always plans FROM the
          UGV's own current position, and a start point inside LETHAL space
-         is rejected outright (see prm_planner.py's docstring on this exact
+         is rejected outright (see the removed PRM planner's old docstring (git history) on this exact
          design choice) - a permanent deadlock: it can't move because no
          plan exists, and no plan exists because it hasn't moved off a
          rejected cell. Confirmed by live-checking `/elevation_map` after a

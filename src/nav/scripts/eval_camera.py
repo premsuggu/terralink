@@ -49,7 +49,7 @@ def main():
     snap = MapSnapshot(layers={"elevation": elev.astype(np.float32), "variance": np.zeros_like(elev, np.float32),
                                "is_valid": np.ones((n, n), np.float32), "traversability": T.tier.astype(np.float32)},
                        resolution=res, center_x=cx, center_y=cy)
-    r = run_plan(snap, build_masks(snap), start, goal, planner="astar", params=astar_planner.PlannerParams())
+    r = run_plan(snap, build_masks(snap), start, goal, params=astar_planner.PlannerParams())
     route = np.asarray(r.waypoints, float)
     L = float(np.hypot(*np.diff(route, axis=0).T).sum())
     poses = drive_poses(route)

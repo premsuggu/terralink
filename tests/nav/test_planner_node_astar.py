@@ -108,27 +108,16 @@ def _tunnel_map():
     return w, a
 
 
-class TestPlannerTypeSwitch:
-    def test_default_is_prm_and_still_plans(self, node_factory):
-        node = node_factory()
-        node._map_callback(_gridmap(_open_map()))
-        resp = node._get_plan_callback(_request(_xy(10, 10), _xy(45, 40)), GetPlan.Response())
-        assert node._planner_type == "prm"
-        assert len(resp.plan.poses) >= 2
-
+class TestPlanner:
     def test_astar_plans_an_open_map_as_one_straight_segment(self, node_factory):
-        node = node_factory("planner_type:=astar")
+        node = node_factory()
         node._map_callback(_gridmap(_open_map()))
         resp = node._get_plan_callback(_request(_xy(10, 10), _xy(45, 40)), GetPlan.Response())
         assert len(resp.plan.poses) == 2
         assert node.published["frontier"][-1] is False and node.published["anomaly"][-1] is False
 
-    def test_unknown_planner_type_is_rejected(self, node_factory):
-        with pytest.raises(ValueError):
-            node_factory("planner_type:=dijkstra")
-
     def test_astar_reports_no_path_for_a_walled_off_goal(self, node_factory):
-        node = node_factory("planner_type:=astar")
+        node = node_factory()
         w = _open_map()
         w[:, 30] = False
         node._map_callback(_gridmap(w))
@@ -138,7 +127,7 @@ class TestPlannerTypeSwitch:
 
 class TestRouteMemoryThroughTheNode:
     def test_repeated_identical_requests_return_identical_waypoints(self, node_factory):
-        node = node_factory("planner_type:=astar")
+        node = node_factory()
         w = _open_map()
         w[:, 28:32] = False
         w[8:14, 28:32] = True
@@ -153,7 +142,7 @@ class TestRouteMemoryThroughTheNode:
         # The follower only treats a plan as unchanged if every waypoint is
         # within 5 cm - so as the robot advances along the route, the planner
         # must keep handing back the SAME list, not one trimmed to the robot.
-        node = node_factory("planner_type:=astar")
+        node = node_factory()
         w = _open_map()
         w[:, 28:32] = False
         w[8:14, 28:32] = True
@@ -163,7 +152,7 @@ class TestRouteMemoryThroughTheNode:
         assert moved == first
 
     def test_memory_can_be_switched_off(self, node_factory):
-        node = node_factory("planner_type:=astar", "enable_plan_memory:=false")
+        node = node_factory("enable_plan_memory:=false")
         node._map_callback(_gridmap(_open_map()))
         resp = node._get_plan_callback(_request(_xy(10, 10), _xy(45, 40)), GetPlan.Response())
         assert len(resp.plan.poses) == 2
@@ -173,7 +162,7 @@ class TestTentativeRoutesThroughTheNode:
     def _node_with_tunnel(self, node_factory, monkeypatch, *params):
         w, a = _tunnel_map()
         monkeypatch.setattr("nav.planner_node.compute_anomaly_mask", lambda *args, **kw: a)
-        node = node_factory("planner_type:=astar", "enable_anomaly_mode:=true", *params)
+        node = node_factory("enable_anomaly_mode:=true", *params)
         node._map_callback(_gridmap(w))
         return node
 
@@ -228,14 +217,14 @@ class TestExplorationThroughTheNode:
         return w, valid
 
     def test_without_exploration_an_unreachable_goal_gives_no_path(self, node_factory):
-        node = node_factory("planner_type:=astar")
+        node = node_factory()
         w, valid = self._world()
         node._map_callback(_gridmap(w, valid))
         resp = node._get_plan_callback(_request(_xy(30, 5), _xy(30, 55)), GetPlan.Response())
         assert resp.plan.poses == []
 
     def test_with_exploration_the_ugv_is_sent_to_the_opening(self, node_factory):
-        node = node_factory("planner_type:=astar", "enable_exploration:=true")
+        node = node_factory("enable_exploration:=true")
         w, valid = self._world()
         node._map_callback(_gridmap(w, valid))
         poses = _poses(node._get_plan_callback(_request(_xy(30, 5), _xy(30, 55)), GetPlan.Response()))
@@ -246,7 +235,7 @@ class TestExplorationThroughTheNode:
         assert node.published["frontier"][-1] is True  # tentative: keep replanning
 
     def test_after_arriving_the_visited_spot_is_not_chosen_again(self, node_factory):
-        node = node_factory("planner_type:=astar", "enable_exploration:=true")
+        node = node_factory("enable_exploration:=true")
         w, valid = self._world()
         node._map_callback(_gridmap(w, valid))
         first = _poses(node._get_plan_callback(_request(_xy(30, 5), _xy(30, 55)), GetPlan.Response()))
@@ -264,7 +253,7 @@ class TestFlagsDescribeTheDrivenPlan:
     def test_a_failed_request_does_not_overwrite_the_published_flags(self, node_factory, monkeypatch):
         w, a = _tunnel_map()
         monkeypatch.setattr("nav.planner_node.compute_anomaly_mask", lambda *args, **kw: a)
-        node = node_factory("planner_type:=astar", "enable_anomaly_mode:=true")
+        node = node_factory("enable_anomaly_mode:=true")
         node._map_callback(_gridmap(w))
         node._get_plan_callback(_request(_xy(30, 5), _xy(30, 55)), GetPlan.Response())
         assert node.published["anomaly"] == [True]
@@ -274,23 +263,13 @@ class TestFlagsDescribeTheDrivenPlan:
         assert node.published["anomaly"] == [True]  # nothing new was published
         assert node.published["frontier"] == [False]
 
-    def test_the_prm_planner_has_the_same_protection(self, node_factory):
-        node = node_factory()  # default planner: prm
-        w = _open_map()
-        w[:, 30] = False
-        node._map_callback(_gridmap(w))
-        node._get_plan_callback(_request(_xy(10, 10), _xy(10, 20)), GetPlan.Response())
-        before = list(node.published["frontier"])
-        node._get_plan_callback(_request(_xy(10, 10), _xy(10, 50)), GetPlan.Response())  # unreachable
-        assert node.published["frontier"] == before
-
 
 class TestAnomalyHoldThroughTheNode:
     def test_a_flickering_anomaly_mask_keeps_the_tunnel_route_alive(self, node_factory, monkeypatch):
         w, a = _tunnel_map()
         masks = iter([a, np.zeros_like(a), np.zeros_like(a)])
         monkeypatch.setattr("nav.planner_node.compute_anomaly_mask", lambda *args, **kw: next(masks))
-        node = node_factory("planner_type:=astar", "enable_anomaly_mode:=true", "anomaly_hold_sec:=30.0")
+        node = node_factory("enable_anomaly_mode:=true", "anomaly_hold_sec:=30.0")
         req = lambda: _request(_xy(30, 5), _xy(30, 55))  # noqa: E731
         node._map_callback(_gridmap(w))
         assert node._get_plan_callback(req(), GetPlan.Response()).plan.poses
@@ -301,7 +280,7 @@ class TestAnomalyHoldThroughTheNode:
         w, a = _tunnel_map()
         masks = iter([a, np.zeros_like(a)])
         monkeypatch.setattr("nav.planner_node.compute_anomaly_mask", lambda *args, **kw: next(masks))
-        node = node_factory("planner_type:=astar", "enable_anomaly_mode:=true", "enable_plan_memory:=false")
+        node = node_factory("enable_anomaly_mode:=true", "enable_plan_memory:=false")
         node._map_callback(_gridmap(w))
         node._map_callback(_gridmap(w))
         assert node._get_plan_callback(_request(_xy(30, 5), _xy(30, 55)), GetPlan.Response()).plan.poses == []
@@ -322,7 +301,7 @@ class TestWaitForMappingThroughTheNode:
 
     def test_the_gamble_is_held_back_while_the_map_is_growing(self, node_factory):
         node = node_factory(
-            "planner_type:=astar", "enable_frontier_mode:=true", "wait_for_mapping:=true", "mask_rim_m:=0.0"
+            "enable_frontier_mode:=true", "wait_for_mapping:=true", "mask_rim_m:=0.0"
         )
         w, valid = self._gamble_map()
         node._map_callback(_gridmap(w, valid))  # first message: no history yet -> counts as growing
@@ -331,7 +310,7 @@ class TestWaitForMappingThroughTheNode:
 
     def test_the_gamble_is_allowed_after_the_wait_cap(self, node_factory):
         node = node_factory(
-            "planner_type:=astar", "enable_frontier_mode:=true", "wait_for_mapping:=true",
+            "enable_frontier_mode:=true", "wait_for_mapping:=true",
             "mapping_max_wait_sec:=0.0", "mask_rim_m:=0.0",
         )  # fmt: skip
         w, valid = self._gamble_map()
@@ -340,7 +319,7 @@ class TestWaitForMappingThroughTheNode:
         assert resp.plan.poses
 
     def test_the_gamble_is_allowed_when_the_rule_is_off(self, node_factory):
-        node = node_factory("planner_type:=astar", "enable_frontier_mode:=true", "mask_rim_m:=0.0")
+        node = node_factory("enable_frontier_mode:=true", "mask_rim_m:=0.0")
         w, valid = self._gamble_map()
         node._map_callback(_gridmap(w, valid))
         resp = node._get_plan_callback(_request(_xy(30, 5), _xy(30, 55)), GetPlan.Response())
@@ -349,15 +328,15 @@ class TestWaitForMappingThroughTheNode:
 
 class TestStuckFeedbackThroughTheNode:
     def test_off_by_default(self, node_factory):
-        assert node_factory("planner_type:=astar")._global_planner.stuck is None
+        assert node_factory()._global_planner.stuck is None
 
     def test_can_be_switched_on(self, node_factory):
-        node = node_factory("planner_type:=astar", "stuck_feedback:=true", "stuck_window_sec:=9.0")
+        node = node_factory("stuck_feedback:=true", "stuck_window_sec:=9.0")
         assert node._global_planner.stuck is not None
         assert node._global_planner.stuck.window_sec == 9.0
 
     def test_planning_still_works_with_it_on(self, node_factory):
-        node = node_factory("planner_type:=astar", "stuck_feedback:=true")
+        node = node_factory("stuck_feedback:=true")
         node._map_callback(_gridmap(_open_map()))
         resp = node._get_plan_callback(_request(_xy(10, 10), _xy(45, 40)), GetPlan.Response())
         assert len(resp.plan.poses) == 2
@@ -365,20 +344,17 @@ class TestStuckFeedbackThroughTheNode:
 
 class TestFrontierMinWidthDefault:
     """A* without the thin-strip pruning never reached the goal in 3 of 3 live
-    runs (it kept gambling through unscanned wall tops), so the astar planner
-    applies it automatically; the original prm planner is left unchanged."""
+    runs (it kept gambling through unscanned wall tops), so the planner
+    applies it automatically."""
 
     def test_astar_defaults_to_the_robot_diameter(self, node_factory):
-        assert node_factory("planner_type:=astar")._frontier_min_width_m == pytest.approx(0.44)
-
-    def test_prm_default_is_off(self, node_factory):
-        assert node_factory()._frontier_min_width_m == 0.0
+        assert node_factory()._frontier_min_width_m == pytest.approx(0.44)
 
     def test_an_explicit_zero_turns_it_off_for_astar(self, node_factory):
-        assert node_factory("planner_type:=astar", "frontier_min_width_m:=0.0")._frontier_min_width_m == 0.0
+        assert node_factory("frontier_min_width_m:=0.0")._frontier_min_width_m == 0.0
 
-    def test_an_explicit_value_applies_to_prm_too(self, node_factory):
-        node = node_factory("planner_type:=prm", "frontier_min_width_m:=0.3")
+    def test_an_explicit_value_is_used_as_given(self, node_factory):
+        node = node_factory("frontier_min_width_m:=0.3")
         assert node._frontier_min_width_m == pytest.approx(0.3)
 
     def _two_rooms_with_an_unscanned_wall_top(self):
@@ -392,7 +368,7 @@ class TestFrontierMinWidthDefault:
         return w, valid
 
     def test_the_thin_seam_is_not_a_gamble_for_astar(self, node_factory):
-        node = node_factory("planner_type:=astar", "enable_frontier_mode:=true", "mask_rim_m:=0.0")
+        node = node_factory("enable_frontier_mode:=true", "mask_rim_m:=0.0")
         w, valid = self._two_rooms_with_an_unscanned_wall_top()
         node._map_callback(_gridmap(w, valid))
         resp = node._get_plan_callback(_request(_xy(30, 5), _xy(30, 55)), GetPlan.Response())
@@ -400,7 +376,7 @@ class TestFrontierMinWidthDefault:
 
     def test_with_pruning_switched_off_the_same_seam_becomes_a_gamble(self, node_factory):
         node = node_factory(
-            "planner_type:=astar", "enable_frontier_mode:=true", "mask_rim_m:=0.0", "frontier_min_width_m:=0.0"
+            "enable_frontier_mode:=true", "mask_rim_m:=0.0", "frontier_min_width_m:=0.0"
         )  # fmt: skip
         w, valid = self._two_rooms_with_an_unscanned_wall_top()
         node._map_callback(_gridmap(w, valid))
@@ -416,7 +392,7 @@ class TestPlanTraceTopic:
     def test_a_valid_plan_is_published_with_waypoints_and_kinds(self, node_factory):
         import json
 
-        node = node_factory("planner_type:=astar")
+        node = node_factory()
         node._map_callback(_gridmap(_open_map()))
         resp = node._get_plan_callback(_request(_xy(10, 10), _xy(45, 40)), GetPlan.Response())
         rec = json.loads(node.published["trace"][-1])
@@ -428,7 +404,7 @@ class TestPlanTraceTopic:
     def test_a_no_path_reply_is_published_too(self, node_factory):
         import json
 
-        node = node_factory("planner_type:=astar")
+        node = node_factory()
         w = _open_map()
         w[:, 30] = False
         node._map_callback(_gridmap(w))
@@ -438,17 +414,8 @@ class TestPlanTraceTopic:
         # the request is recorded so a drawing can show where the UGV asked from
         assert rec["start"] == pytest.approx(list(_xy(10, 10)))
 
-    def test_prm_plans_are_published_without_per_stretch_kinds(self, node_factory):
-        import json
-
-        node = node_factory()
-        node._map_callback(_gridmap(_open_map()))
-        node._get_plan_callback(_request(_xy(10, 10), _xy(45, 40)), GetPlan.Response())
-        rec = json.loads(node.published["trace"][-1])
-        assert rec["planner"] == "prm" and rec["valid"] is True and rec["kinds"] == []
-
     def test_the_trace_does_not_alter_the_plan_itself(self, node_factory):
-        node = node_factory("planner_type:=astar")
+        node = node_factory()
         node._map_callback(_gridmap(_open_map()))
         a = _poses(node._get_plan_callback(_request(_xy(10, 10), _xy(45, 40)), GetPlan.Response()))
         b = _poses(node._get_plan_callback(_request(_xy(10, 10), _xy(45, 40)), GetPlan.Response()))
@@ -461,7 +428,7 @@ class TestGroundLayerAndIslands:
     being an "island" and the planner trusted its flat top)."""
 
     def test_island_rule_gets_the_uav_elevation_and_masks_get_the_ground_layer(self, node_factory):
-        node = node_factory("planner_type:=astar", "enable_overhead_islands:=true", "enable_exploration:=true")
+        node = node_factory("enable_overhead_islands:=true", "enable_exploration:=true")
         elev = np.zeros((N, N))
         elev[20:40, 20:40] = 3.5                                  # a deck, as the UAV sees it
         gv = np.zeros((N, N))
@@ -478,15 +445,15 @@ class TestGroundLayerAndIslands:
 
     def test_island_strategy_freespace_wires_the_freespace_planner_under_roofs(self, node_factory):
         from nav.freespace import IslandStrategyPlanner
-        node = node_factory("planner_type:=astar", "enable_overhead_islands:=true", "island_strategy:=freespace")
+        node = node_factory("enable_overhead_islands:=true", "island_strategy:=freespace")
         assert isinstance(node._island_planner.planner, IslandStrategyPlanner)
         assert node._island_planner.planner.outer is node._island_planner
         assert node._island_planner.planner.freespace.stuck is node._global_planner.stuck      # one stuck tracker for both
 
     def test_island_strategy_default_is_the_original_viewpoints(self, node_factory):
-        node = node_factory("planner_type:=astar", "enable_overhead_islands:=true")
+        node = node_factory("enable_overhead_islands:=true")
         assert node._island_planner.planner is node._global_planner
 
     def test_unknown_island_strategy_is_rejected(self, node_factory):
         with pytest.raises(ValueError):
-            node_factory("planner_type:=astar", "enable_overhead_islands:=true", "island_strategy:=teleport")
+            node_factory("enable_overhead_islands:=true", "island_strategy:=teleport")

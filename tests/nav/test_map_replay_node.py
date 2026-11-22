@@ -45,7 +45,7 @@ class TestSnapshotToGridMap:
     def test_the_planner_node_accepts_it_and_plans(self):
         from nav_msgs.srv import GetPlan
 
-        rclpy.init(args=["--ros-args", "-p", "planner_type:=astar"])
+        rclpy.init()
         try:
             from nav.planner_node import PlannerNode
 

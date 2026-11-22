@@ -1,10 +1,12 @@
-"""Deterministic grid A* path planner - the replacement for `prm_planner`.
+"""Deterministic grid A* path planner - the project's only global planner.
 
-WHY THIS EXISTS
----------------
-`prm_planner` samples random cells and links them into a roadmap. That has
-three problems for this project (see docs/work-docs/nav/step07_astar_planner.md
-for the full discussion):
+WHY IT IS A GRID PLANNER
+------------------------
+The project first used a PRM (random sample points linked into a roadmap).
+That planner has been removed (see docs/work-docs/nav/step15_prm_removal.md;
+the old code is in git history, last present in commit efd5408). Its three
+problems for this project (full discussion in
+docs/work-docs/nav/step07_astar_planner.md) were:
 
 1. It is random, so two plans for nearly the same map can pick different
    routes - one source of the UGV's "useless, random-looking motion".
@@ -50,7 +52,6 @@ from scipy.ndimage import distance_transform_edt
 
 from emap.traversability import DIFFICULT
 from emap.utils.coord_transform import grid_to_world, world_to_grid
-from nav.prm_planner import PlanResult
 
 _SQRT2 = math.sqrt(2.0)
 
@@ -75,6 +76,36 @@ _FREE, _FRONTIER, _ANOMALY = 0, 1, 2
 # the radius we compare against (e.g. 0.3 m), so without a tolerance a
 # floating-point wobble decides whether a corridor is open or closed.
 _CLEARANCE_EPS = 1e-6
+
+
+@dataclass
+class PlanResult:
+    """A planner's answer: a sequence of world-frame (x, y)
+    waypoints (empty if `valid` is False), start-to-goal order.
+
+    `has_frontier_segments`: True only when `allow_frontier=True` was passed
+    to the planner AND the returned path actually needed to cross at least one
+    unobserved-but-reachable "frontier" cell to connect start to goal (see
+    `nav.walkability.compute_frontier_mask`) - i.e. this path is a tentative
+    GUESS through territory nothing has actually measured yet, not a
+    confirmed-safe route. Always False for a plan found without frontier
+    cells at all (including every call that doesn't pass `allow_frontier`),
+    so existing callers see no behavior change.
+
+    `has_anomaly_segments`: same idea, but for `allow_anomaly=True` and cells
+    from `nav.anomaly.compute_anomaly_mask` - a path that could only be
+    completed by crossing a cell the map scored LETHAL but suspects is a
+    step-discontinuity data artifact (e.g. a tunnel roof), not a genuine
+    obstacle. Kept as a separate field from `has_frontier_segments`
+    deliberately - a downstream consumer needs to know WHICH resolution
+    mechanism a tentative segment needs (more UAV scanning, for frontier; a
+    3D voxel-map check, for anomaly - see step06 Phase 4), and a single path
+    can in principle need both kinds in different places.
+    """
+    waypoints: list[tuple[float, float]] = field(default_factory=list)
+    valid: bool = False
+    has_frontier_segments: bool = False
+    has_anomaly_segments: bool = False
 
 
 @dataclass
@@ -181,7 +212,7 @@ def line_is_clear(passable: np.ndarray, r0: int, c0: int, r1: int, c1: int) -> b
 
     This is a CONSERVATIVE "supercover" test: a cell counts as touched if the
     segment passes through its closed square - including just its corner.
-    That matters at 0.1 m resolution: the plain Bresenham line `prm_planner`
+    That matters at 0.1 m resolution: the plain Bresenham line the old PRM planner
     uses can slip diagonally between two blocked cells that only touch at a
     corner (a real collision for a robot). Here, squeezing through such a
     crack is rejected.
@@ -902,7 +933,7 @@ def plan(
 ) -> AStarResult:
     """Plan a path from `start_xy` to `goal_xy` (world meters).
 
-    Same first six arguments as `prm_planner.plan`, so a caller can swap
+    Same first six arguments the old PRM `plan` had, so callers did not change
     planners. Tunables live in `PlannerParams` (pass `params=`, and/or any
     single field by name as an override, e.g. `standoff_m=0.0`).
 
@@ -911,7 +942,7 @@ def plan(
         traversability: optional (rows, cols) {LETHAL, DIFFICULT, EASY} layer;
             only used to make DIFFICULT cells cost more.
         frontier_mask / anomaly_mask, allow_frontier / allow_anomaly: the
-            uncertain-cell categories, same meaning as in `prm_planner`.
+            uncertain-cell categories (anomaly / frontier, see nav.walkability).
             Only usable when the matching `allow_*` flag is set.
         force_free_mask: cells that are ALWAYS passable and never inflated
             from - used for regions the 3D voxel check confirmed passable, so
@@ -929,7 +960,7 @@ def plan(
     if not (scene.start_in_grid and scene.in_grid(goal)):
         return AStarResult(valid=False)
     # A goal that is itself a hard obstacle (known-lethal / unobserved and not
-    # an uncertain category) is rejected outright, like prm_planner does.
+    # an uncertain category) is rejected outright, as the old PRM planner did.
     if not (scene.base_walkable[goal] or scene.uncertain[goal]):
         return AStarResult(valid=False)
 

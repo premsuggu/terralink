@@ -1,22 +1,20 @@
 """nav's ROS node: turns the live `/elevation_map` into a walkable mask
 (`nav.walkability`) and answers path-planning requests over it
-(`nav.prm_planner`) via the standard `nav_msgs/srv/GetPlan` service - the
-direct replacement for `src/d3 (since removed; last present in commit 8a86dab)/my_bot/src/waypoints_server.cpp`
-(`waypoints_service`, a custom `tutorial_interfaces/srv/GetWaypoints`).
-`GetPlan` was used instead of vendoring that custom interface: it already
-has exactly the shape this needs (`start`/`goal` PoseStamped in, a
-`nav_msgs/Path` out), so no new `.srv` file or interfaces package was
-needed.
+(`nav.astar_planner`, via `nav.global_planner`) through the standard
+`nav_msgs/srv/GetPlan` service.
+`GetPlan` was used instead of a custom service: it already has exactly the
+shape this needs (`start`/`goal` PoseStamped in, a `nav_msgs/Path` out), so no
+new `.srv` file or interfaces package was needed.
 
-Unlike d3's server (which continuously rebuilds its PRM roadmap frame-by-
-frame from a live camera image as soon as the node starts), this node does
-nothing until a plan is actually requested: it just keeps the latest decoded
-walkable mask around (updated every time `/elevation_map` publishes), and
-builds a fresh PRM roadmap on demand inside the service callback. That's a
-deliberate difference, not an oversight - `/elevation_map` already updates
-on its own schedule regardless of whether anyone's asking for a path, so
-there's no equivalent here of "keep building the roadmap so it's ready
-later"; the map itself is the thing that's kept ready.
+This node does nothing until a plan is actually requested: it just keeps the
+latest decoded walkable mask around (updated every time `/elevation_map`
+publishes) and plans on demand inside the service callback. `/elevation_map`
+already updates on its own schedule regardless of whether anyone is asking for
+a path, so the map itself is the thing that is kept ready.
+
+History: the node used to offer a second, random-sampling PRM planner
+(`planner_type:=prm`). It was removed - see
+docs/work-docs/nav/step15_prm_removal.md.
 """
 from __future__ import annotations
 
@@ -47,34 +45,6 @@ from nav.resolved_regions import ResolvedRegion, ResolvedRegionStore
 from nav.ground_layer import combine_ground
 from nav.plan_validity import plan_is_blocked
 from nav.walkability import compute_frontier_mask, compute_walkable_mask
-from nav.prm_planner import plan as prm_plan
-
-# get_plan is re-run from scratch every time it's asked (see module
-# docstring), including by waypoint_follower.py's own background
-# `enable_frontier_replan` polling every few seconds while a plan is still
-# tentative. `nav.prm_planner.plan`'s default `rng=None` creates a fresh,
-# OS-entropy-seeded generator on every call - so two get_plan requests made
-# seconds apart against a walkable_mask that hasn't meaningfully changed
-# still returned a genuinely different random roadmap every time.
-#
-# NOTE ON A DEAD END (GUI-mode debugging, 2026-09-24, corrected after
-# verifying against live logs - see waypoint_follower.py's
-# _skip_reached_leading_waypoints for the actual root cause and fix of the
-# "UGV moves here and there and just stops" bug): unseeded sampling was
-# suspected as the reason two replans a few seconds apart could hand the
-# follower very different waypoint counts/targets, and it was tempting to
-# blame the resulting goal churn for the stall. That theory doesn't survive
-# the live log, though: `/elevation_map`'s traversability layer keeps
-# changing cell-by-cell from ongoing sensor fusion even where nothing new
-# was physically observed, and `plan()`'s footprint-clearing around the
-# (moving) start pose also shifts `walkable_mask` call to call - so even
-# with this fixed seed, consecutive get_plan calls kept returning different
-# plans in a live GUI run, and the UGV still didn't move. Seeding is kept
-# anyway (a real, harmless reproducibility improvement, and it helps
-# `_waypoints_effectively_equal` in waypoint_follower.py catch the cases
-# where the map genuinely has settled) - but it is NOT what fixes the
-# stall, and should not be described as such.
-_PLAN_RNG_SEED = 20260924
 
 
 class PlannerNode(Node):
@@ -82,12 +52,9 @@ class PlannerNode(Node):
         super().__init__("planner_node")
 
         self.declare_parameter("map_topic", "/elevation_map")
-        self.declare_parameter("num_samples", 400)
-        self.declare_parameter("connect_radius_m", 3.0)
         self.declare_parameter("footprint_radius_m", 0.3)
         # OFF by default - existing launches/tests get byte-for-byte the same
         # planner_node behavior as before this parameter existed. See
-        # nav.prm_planner's module docstring and
         # docs/work-docs/nav/step05_frontier_tunnel_navigation.md: when on,
         # a region the UAV's overhead camera can never observe (e.g. a
         # tunnel/culvert interior) is no longer automatically treated as
@@ -99,8 +66,7 @@ class PlannerNode(Node):
         # top-down map it is nearly always an unscanned thin wall top (a real
         # 0.15 m wall is only 1-2 cells wide, so part of it is unobserved
         # rather than lethal). See nav.walkability.compute_frontier_mask.
-        # Negative (default) = automatic: the robot's diameter for the "astar"
-        # planner, off (0) for "prm" so the original planner is unchanged.
+        # Negative (default) = automatic: the robot's diameter.
         # Without it A* repeatedly "gambles" through such walls: in 3 of 3
         # live runs it never reached a goal 6 m away (see step07 doc).
         self.declare_parameter("frontier_min_width_m", -1.0)
@@ -131,14 +97,10 @@ class PlannerNode(Node):
         # check verdict (passable/blocked) still overrides it immediately.
         self.declare_parameter("anomaly_hold_sec", 0.0)
 
-        # Which global planner answers get_plan. "prm" (default) is the
-        # original sampling planner, unchanged. "astar" is the deterministic
-        # grid planner (nav/astar_planner.py) with robot-size inflation, route
-        # memory and optional exploration - see
-        # docs/work-docs/nav/step07_astar_planner.md. Opt-in until it has been
-        # verified live, same discipline as every other feature here.
-        self.declare_parameter("planner_type", "prm")
-        # --- A* planner tunables (ignored by "prm"); see PlannerParams. ---
+        # The global planner is the deterministic grid A* planner
+        # (nav/astar_planner.py) with robot-size inflation, route memory and
+        # optional exploration - see docs/work-docs/nav/step07_astar_planner.md.
+        # --- A* planner tunables; see PlannerParams. ---
         self.declare_parameter("robot_radius_m", 0.22)
         self.declare_parameter("inflation_margin_m", 0.05)
         # How far the map's own lethal cells already extend past a real
@@ -196,14 +158,9 @@ class PlannerNode(Node):
         self.declare_parameter("mapping_growth_frac", 0.01)
         self.declare_parameter("mapping_max_wait_sec", 150.0)
 
-        self._planner_type = str(self.get_parameter("planner_type").value)
-        if self._planner_type not in ("prm", "astar"):
-            raise ValueError(f"planner_type must be 'prm' or 'astar', got {self._planner_type!r}")
         self._frontier_min_width_m = float(self.get_parameter("frontier_min_width_m").value)
         if self._frontier_min_width_m < 0:  # automatic
-            self._frontier_min_width_m = 2.0 * float(self.get_parameter("robot_radius_m").value) if (
-                self._planner_type == "astar"
-            ) else 0.0
+            self._frontier_min_width_m = 2.0 * float(self.get_parameter("robot_radius_m").value)
         self._astar_params = astar_planner.PlannerParams(
             robot_radius_m=float(self.get_parameter("robot_radius_m").value),
             inflation_margin_m=float(self.get_parameter("inflation_margin_m").value),
@@ -240,9 +197,6 @@ class PlannerNode(Node):
         self._first_request_time: float | None = None
         self._last_logged_note = ""
 
-        self._num_samples = int(self.get_parameter("num_samples").value)
-        self._connect_radius_m = float(self.get_parameter("connect_radius_m").value)
-        self._footprint_radius_m = float(self.get_parameter("footprint_radius_m").value)
         self._enable_frontier_mode = bool(self.get_parameter("enable_frontier_mode").value)
         self._enable_anomaly_mode = bool(self.get_parameter("enable_anomaly_mode").value)
         self._anomaly_latch = MaskLatch(float(self.get_parameter("anomaly_hold_sec").value))
@@ -250,8 +204,7 @@ class PlannerNode(Node):
         # Cached from the most recent /elevation_map message - see module
         # docstring for why this is updated passively rather than driven by
         # plan requests. _frontier_mask/_anomaly_mask stay None whenever
-        # their mode is off, which is also exactly what prm_plan's own
-        # defaults expect.
+        # their mode is off.
         self._walkable_mask = None
         self._frontier_mask = None
         self._anomaly_mask = None
@@ -275,7 +228,7 @@ class PlannerNode(Node):
         self._layers = None                 # the last UAV map's layers (decoded), for the island logic
         self._floor_layers = None           # the UGV's own map (floor_map_node), same grid
         self._island_planner = None
-        if bool(self.get_parameter("enable_overhead_islands").value) and self._planner_type == "astar":
+        if bool(self.get_parameter("enable_overhead_islands").value):
             strategy = str(self.get_parameter("island_strategy").value)
             if strategy not in ("viewpoints", "freespace"):
                 raise ValueError(f"island_strategy must be 'viewpoints' or 'freespace', got {strategy!r}")
@@ -365,7 +318,7 @@ class PlannerNode(Node):
 
         if self._enable_anomaly_mode:
             # Cached on self, not just a local variable, so _get_plan_callback
-            # can pass it into prm_plan below - the same pattern
+            # can pass it to the planner - the same pattern
             # self._frontier_mask already uses.
             # step06 anomaly-detection-v2 (second fix): a live-found bug in
             # the first redesign (two real rooms across an ordinary thin
@@ -466,7 +419,7 @@ class PlannerNode(Node):
         return self._growth.growing(now)
 
     def _plan_astar(self, start_xy, goal_xy):
-        """The "astar" planner path - all the decision logic (plan, route
+        """The planner path - all the decision logic (plan, route
         memory, exploration) lives in `nav.global_planner.GlobalPlanner` so the
         offline replay runs exactly the same code."""
         if self._island_planner is not None and self._layers is not None:
@@ -509,11 +462,10 @@ class PlannerNode(Node):
     def _publish_plan_trace(self, start_xy, goal_xy, result) -> None:
         """One JSON line per plan response, for offline drawing (see
         `plan_trace` publisher above). `kinds[i]` describes the stretch from
-        waypoint i to i+1 ("free", "anomaly", "frontier"); the PRM planner
-        does not report per-stretch kinds, so for it `kinds` is empty and the
-        two plan-level flags are all there is."""
+        waypoint i to i+1 ("free", "anomaly", "frontier"); the two plan-level
+        flags say whether any stretch is tentative."""
         record = {
-            "planner": self._planner_type,
+            "planner": "astar",  # kept in the trace so older renderers/readers still work
             "valid": bool(result.valid),
             "start": [float(start_xy[0]), float(start_xy[1])],
             "goal": [float(goal_xy[0]), float(goal_xy[1])],
@@ -533,28 +485,7 @@ class PlannerNode(Node):
         start_xy = (request.start.pose.position.x, request.start.pose.position.y)
         goal_xy = (request.goal.pose.position.x, request.goal.pose.position.y)
 
-        if self._planner_type == "astar":
-            result = self._plan_astar(start_xy, goal_xy)
-        else:
-            result = prm_plan(
-                self._walkable_mask,
-                self._resolution,
-                self._center_x,
-                self._center_y,
-                start_xy,
-                goal_xy,
-                num_samples=self._num_samples,
-                connect_radius_m=self._connect_radius_m,
-                footprint_radius_m=self._footprint_radius_m,
-                # See _PLAN_RNG_SEED's own comment above - fixed seed, fresh
-                # Generator per call, so an unchanged map yields an unchanged
-                # plan instead of a new random one on every request.
-                rng=np.random.default_rng(_PLAN_RNG_SEED),
-                frontier_mask=self._frontier_mask,
-                allow_frontier=self._enable_frontier_mode,
-                anomaly_mask=self._anomaly_mask,
-                allow_anomaly=self._enable_anomaly_mode,
-            )
+        result = self._plan_astar(start_xy, goal_xy)
         # These two flags describe the plan the follower is CURRENTLY DRIVING,
         # and it uses them to decide whether to keep re-planning. A request
         # that found NO path says nothing about that plan - publishing "not

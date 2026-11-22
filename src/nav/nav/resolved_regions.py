@@ -108,7 +108,7 @@ class ResolvedRegionStore:
         from now on, not merely a suspected artifact) and, when an
         `anomaly_mask` was supplied, forced `anomaly=False` there too (no
         longer tentative - a plan through it should cost the same as any
-        other confirmed-walkable edge, not still carry `prm_planner`'s
+        other confirmed-walkable edge, not still carry the planner's
         anomaly-edge penalty for a question that's already been settled).
 
         A BLOCKED region: forced `walkable=False` (ground truth said no,
@@ -117,7 +117,7 @@ class ResolvedRegionStore:
         means "uncertain, worth a 3D check" (see `nav.anomaly`'s own
         docstring), and once that check has actually happened and come back
         negative, this cell is just ordinary confirmed-LETHAL now, not a
-        tentative pass-through corridor `prm_planner` should keep offering
+        tentative pass-through corridor the planner should keep offering
         at a penalty.
 
         If the store is empty, returns `walkable_mask`/`anomaly_mask`
@@ -131,7 +131,7 @@ class ResolvedRegionStore:
         walkable_mask = np.array(walkable_mask, dtype=bool, copy=True)
         anomaly_mask = None if anomaly_mask is None else np.array(anomaly_mask, dtype=bool, copy=True)
         n_rows, n_cols = walkable_mask.shape
-        cell_n = n_rows  # ElevationMap's grid is always square (same assumption prm_planner.py makes)
+        cell_n = n_rows  # ElevationMap's grid is always square (same assumption astar_planner.py makes)
 
         for region in self._regions:
             r0, c0 = world_to_grid(region.x_min, region.y_min, center_x, center_y, resolution, cell_n)

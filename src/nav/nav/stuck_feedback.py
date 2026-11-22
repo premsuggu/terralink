@@ -2,7 +2,7 @@
 
 WHY A DETERMINISTIC PLANNER NEEDS THIS
 --------------------------------------
-`prm_planner` was random: when the robot got stuck and the follower asked for
+the removed PRM planner was random: when the robot got stuck and the follower asked for
 a fresh plan, it might get a different route by luck. A deterministic planner
 with route memory does the opposite - asked again from the same spot with the
 same map, it gives the SAME route back ("kept stored route"), so the follower's

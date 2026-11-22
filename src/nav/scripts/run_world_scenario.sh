@@ -17,7 +17,7 @@ python3 src/nav/scripts/record_world_run.py --out "$OUT" --goal "$GX" "$GY" --ma
 REC=$!
 sleep 2
 ros2 launch nav tunnel_demo.launch.py world:=${W}_run.world nav2_params:=nav2_params_large.yaml headless:=true \
-    autonomous_uav:=false planner_type:=astar map_snapshot:="$REPO/src/nav/maps/${W}_${MAP}.npz" \
+    autonomous_uav:=false  map_snapshot:="$REPO/src/nav/maps/${W}_${MAP}.npz" \
     goal_x:=$GX goal_y:=$GY ${EXTRA:-} > "$OUT.launch.log" 2>&1 &
 LAUNCH=$!
 wait $REC

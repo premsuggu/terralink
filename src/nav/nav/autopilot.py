@@ -4,7 +4,7 @@ UAV-maps/UGV-navigates pipeline can be watched running with nobody sending
 any `/cmd_vel` commands by hand.
 
 No ROS here (matches every other algorithm module in this project -
-`emap/fusion.py`, `nav/prm_planner.py`, etc.) - `uav_autopilot_node.py` is
+`emap/fusion.py`, `nav/astar_planner.py`, etc.) - `uav_autopilot_node.py` is
 the thin ROS wrapper that calls this.
 
 Why a small PATROL, not just a single static hover (which is closer to what

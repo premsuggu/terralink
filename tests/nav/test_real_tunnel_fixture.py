@@ -6,7 +6,7 @@ Why a real fixture: the synthetic tunnels in the other tests have generous
 8-row anomaly bands. The REAL flagged mouths on this map are only about 3 x 3
 cells (0.3 m) - narrower than the robot - and an early A* demanded robot
 clearance even inside suspected-passage cells, so it answered "no path" on
-maps where the old zero-width PRM routed straight through. Found by replaying
+maps where the removed zero-width PRM planner routed straight through. Found by replaying
 recorded runs through both planners (see docs/work-docs/nav/step07).
 """
 from pathlib import Path
@@ -43,7 +43,7 @@ class TestRealTunnelMap:
 
     def test_astar_routes_through_the_tunnel(self, tunnel):
         snap, masks = tunnel
-        res = replay.run_plan(snap, masks, START, GOAL, planner="astar")
+        res = replay.run_plan(snap, masks, START, GOAL)
         assert res.valid
         assert res.has_anomaly_segments  # a tentative route, honestly flagged
         # one contiguous uncertain stretch (it may hold several waypoints), not
@@ -53,14 +53,13 @@ class TestRealTunnelMap:
         last = len(kinds) - 1 - kinds[::-1].index("anomaly")
         assert all(k == "anomaly" for k in kinds[first : last + 1])
 
-    def test_it_routes_wherever_the_old_planner_does(self, tunnel):
+    def test_it_finds_a_route_across_the_tunnel(self, tunnel):
         snap, masks = tunnel
-        assert replay.run_plan(snap, masks, START, GOAL, planner="prm").valid
-        assert replay.run_plan(snap, masks, START, GOAL, planner="astar").valid
+        assert replay.run_plan(snap, masks, START, GOAL).valid
 
     def test_the_route_crosses_the_tunnel_roughly_along_its_axis(self, tunnel):
         snap, masks = tunnel
-        res = replay.run_plan(snap, masks, START, GOAL, planner="astar")
+        res = replay.run_plan(snap, masks, START, GOAL)
         kinds = res.segment_kinds
         first = kinds.index("anomaly")
         last = len(kinds) - 1 - kinds[::-1].index("anomaly")
@@ -70,14 +69,14 @@ class TestRealTunnelMap:
 
     def test_a_standoff_point_precedes_the_tentative_stretch(self, tunnel):
         snap, masks = tunnel
-        res = replay.run_plan(snap, masks, START, GOAL, planner="astar")
+        res = replay.run_plan(snap, masks, START, GOAL)
         i = res.segment_kinds.index("anomaly")
         assert i >= 1 and res.segment_kinds[i - 1] == "free"
 
     def test_the_planner_is_deterministic_on_real_data(self, tunnel):
         snap, masks = tunnel
-        a = replay.run_plan(snap, masks, START, GOAL, planner="astar")
-        b = replay.run_plan(snap, masks, START, GOAL, planner="astar")
+        a = replay.run_plan(snap, masks, START, GOAL)
+        b = replay.run_plan(snap, masks, START, GOAL)
         assert a.waypoints == b.waypoints
 
     def test_a_voxel_confirmed_blocked_tunnel_removes_the_route(self, tunnel):
@@ -86,7 +85,7 @@ class TestRealTunnelMap:
         snap, _ = tunnel
         blocked = [ResolvedRegion(-1.6, -1.0, 1.4, 1.0, passable=False)]
         masks = replay.build_masks(snap, use_frontier=True, use_anomaly=True, resolved=blocked)
-        res = replay.run_plan(snap, masks, START, GOAL, planner="astar")
+        res = replay.run_plan(snap, masks, START, GOAL)
         assert not res.has_anomaly_segments  # may still find some other route, but never THIS one
 
     def test_a_voxel_confirmed_passable_tunnel_gives_a_confirmed_route(self, tunnel):
@@ -95,7 +94,7 @@ class TestRealTunnelMap:
         snap, _ = tunnel
         passable = [ResolvedRegion(-1.6, -1.0, 1.4, 1.0, passable=True)]
         masks = replay.build_masks(snap, use_frontier=True, use_anomaly=True, resolved=passable)
-        res = replay.run_plan(snap, masks, START, GOAL, planner="astar")
+        res = replay.run_plan(snap, masks, START, GOAL)
         assert res.valid and not res.has_anomaly_segments
 
 
@@ -114,12 +113,12 @@ class TestCleanParkedMap:
 
     def test_without_pruning_astar_gambles_through_the_wall(self, snap):
         masks = replay.build_masks(snap, use_frontier=True, use_anomaly=True)
-        res = replay.run_plan(snap, masks, START, GOAL, planner="astar")
+        res = replay.run_plan(snap, masks, START, GOAL)
         assert res.valid and res.has_frontier_segments  # the wall-seam gamble
 
     def test_with_pruning_astar_takes_the_direct_tunnel_route(self, snap):
         masks = replay.build_masks(snap, use_frontier=True, use_anomaly=True, frontier_min_width_m=0.44)
-        res = replay.run_plan(snap, masks, START, GOAL, planner="astar")
+        res = replay.run_plan(snap, masks, START, GOAL)
         assert res.valid and res.has_anomaly_segments and not res.has_frontier_segments
         m = replay.path_metrics(res.waypoints, snap, masks)
         assert m.length_m < 6.5  # straight line is 6.0 m
@@ -127,7 +126,7 @@ class TestCleanParkedMap:
 
     def test_the_tentative_stretch_is_the_tunnel_and_a_standoff_precedes_it(self, snap):
         masks = replay.build_masks(snap, use_frontier=True, use_anomaly=True, frontier_min_width_m=0.44)
-        res = replay.run_plan(snap, masks, START, GOAL, planner="astar")
+        res = replay.run_plan(snap, masks, START, GOAL)
         kinds = res.segment_kinds
         i = kinds.index("anomaly")
         assert i >= 1 and kinds[i - 1] == "free"

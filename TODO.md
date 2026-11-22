@@ -128,6 +128,8 @@ ground layer switched off the hidden-island rule (`planner_node` merged it first
 * [x] **R-01 Re-ran W2, W3, W4 (complete map) and W1 with the Jackal model**; videos regenerated with the to-scale Jackal drawing (results in
   `step10` section 6.5; W1 row there).
 * [x] **R-02 Technical report regenerated** 2026-11-11 (`python3 docs/build_report.py`); note: the generator's text was not extended with the step14 results - see `step14_finalisation.md`.
+* [x] **R-05 PRM planner removed** (2026-11-22, `step15_prm_removal.md`): A* is the only planner; 485 nav tests pass.
+* [ ] **R-06 Maze world stalls live** (found 2026-11-22 while checking R-05): `nav_sim.launch.py` on `room_maze.world` finds a 7-waypoint path, reaches waypoint 4, then the UGV stops (DWB "Trajectory Hits Obstacle"). The unmodified commit does the same, so it is older than R-05; the maze was last run live before the Jackal model (step 10). Cause unknown; not investigated yet.
 * [x] **R-04 Untested snippet in `docs/RUN.md`** - run 2026-11-11 exactly as written: goal reached, 120 m, 560 sim s.
 * Done and committed: stress worlds + videos + hidden-interior experiment (commit `1b6fdf2`, not yet pushed).
 * Done and committed: Jackal UGV model (`d8c59bb`; `step10`, `tests/nav/test_ugv_model.py`, `tests/nav/integration/`).

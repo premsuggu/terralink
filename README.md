@@ -7,7 +7,7 @@ ROS 2 Humble heterogeneous robotics framework for unstructured environments (con
 | Package | Role | Location | Docs |
 |---------|------|----------|------|
 | `emap` | UAV elevation mapping (Bayesian 2.5D fusion, traversability, drift compensation, optional GPU fusion) | `src/emap/` | `docs/work-docs/emap/` |
-| `nav` | UGV navigation: walkability, anomaly detection, PRM / A* global planning, route memory, exploration, bounded 3D voxel verification, Nav2 following | `src/nav/` | `docs/work-docs/nav/` |
+| `nav` | UGV navigation: walkability, anomaly detection, A* global planning, route memory, exploration, bounded 3D voxel verification, Nav2 following | `src/nav/` | `docs/work-docs/nav/` |
 | `terralink_semantic` | Semantic vision (planned, not started) | - | - |
 
 The project began by evaluating three approaches (geometric elevation mapping, semantic vision, OpenCV + PRM baseline - see `docs/directions.md`). The two reference implementations that were tried (`src/d1`, `src/d3`) have been removed from the tree; the last commit containing them is `8a86dab`.
@@ -130,7 +130,7 @@ terralink/
 │   │   └── emap/                # elevation_map, fusion(+gpu), drift, traversability, ...
 │   └── nav/                     # OUR UAV-mapped-elevation-driven UGV navigation
 │       ├── package.xml, config/, launch/, models/nav_ugv/, worlds/
-│       └── nav/                 # walkability, anomaly, prm_planner, astar_planner, global_planner, planner_node, waypoint_follower, voxel_map, replay, ...
+│       └── nav/                 # walkability, anomaly, astar_planner, global_planner, planner_node, waypoint_follower, voxel_map, replay, ...
 └── tests/
     ├── emap/                    # unit tests for emap
     └── nav/                     # unit tests for nav

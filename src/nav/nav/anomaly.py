@@ -335,7 +335,7 @@ def _line_cells(p1: tuple[int, int], p2: tuple[int, int]) -> list[tuple[int, int
     from p1 to p2 inclusive, in order. Used to walk the candidate connecting
     line between two components' nearest points and inspect every cell it
     actually crosses, the same kind of explicit, step-by-step grid walk
-    `nav/prm_planner.py`'s own line-of-sight check already uses for the
+    `nav/astar_planner.py`'s own line-of-sight check already uses for the
     identical reason (need the exact cell sequence, not just a distance).
     """
     r1, c1 = p1

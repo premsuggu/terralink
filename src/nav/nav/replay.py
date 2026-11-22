@@ -31,7 +31,6 @@ from nav.global_planner import GlobalPlanner, MapContext
 from nav.ground_layer import combine_ground
 from nav.map_growth import MapGrowthTracker
 from nav.mask_latch import MaskLatch
-from nav.prm_planner import plan as prm_plan
 from nav.resolved_regions import ResolvedRegion, ResolvedRegionStore
 from nav.walkability import compute_frontier_mask, compute_walkable_mask
 
@@ -149,18 +148,10 @@ def run_plan(
     start_xy: tuple[float, float],
     goal_xy: tuple[float, float],
     *,
-    planner: str = "astar",
     explore: bool = False,
     params: astar_planner.PlannerParams | None = None,
 ):
-    """Plan once on a snapshot, exactly as `planner_node` would."""
-    if planner == "prm":
-        return prm_plan(
-            masks.walkable, snap.resolution, snap.center_x, snap.center_y, start_xy, goal_xy,
-            rng=np.random.default_rng(20260924),
-            frontier_mask=masks.frontier, allow_frontier=masks.frontier is not None,
-            anomaly_mask=masks.anomaly, allow_anomaly=masks.anomaly is not None,
-        )  # fmt: skip
+    """Plan once on a snapshot, exactly as `planner_node` would (A*)."""
     return GlobalPlanner(params, enable_memory=False, enable_exploration=explore).plan(
         _context(snap, masks), start_xy, goal_xy
     )
@@ -254,7 +245,6 @@ def replay_sequence(
     starts: list[tuple[float, float]],
     goal_xy: tuple[float, float],
     *,
-    planner: str = "astar",
     use_frontier: bool = True,
     use_anomaly: bool = True,
     hold_sec: float = 0.0,
@@ -274,14 +264,10 @@ def replay_sequence(
     planners: every change is a moment the UGV may turn around.
     """
     latch = MaskLatch(hold_sec)
-    planner_obj = (
-        GlobalPlanner(
-            params, enable_memory=memory, enable_exploration=explore,
-            wait_for_mapping=wait_for_mapping, stuck_feedback=stuck_feedback,
-        )  # fmt: skip
-        if planner == "astar"
-        else None
-    )
+    planner_obj = GlobalPlanner(
+        params, enable_memory=memory, enable_exploration=explore,
+        wait_for_mapping=wait_for_mapping, stuck_feedback=stuck_feedback,
+    )  # fmt: skip
     growth = MapGrowthTracker()
     t_first = times[0] if times else 0.0
     out: list[SequenceStep] = []
@@ -293,12 +279,8 @@ def replay_sequence(
         )  # fmt: skip
         growth.update(int(np.asarray(snap.layers["is_valid"]).astype(bool).sum()), t)
         mapping_active = growth.growing(t) and (t - t_first) < mapping_max_wait_sec
-        if planner_obj is not None:
-            result = planner_obj.plan(_context(snap, masks, mapping_active), start, goal_xy, now=t)
-            note = planner_obj.last_note
-        else:
-            result = run_plan(snap, masks, start, goal_xy, planner=planner)
-            note = ""
+        result = planner_obj.plan(_context(snap, masks, mapping_active), start, goal_xy, now=t)
+        note = planner_obj.last_note
         valid = bool(result.valid)
         route = list(result.waypoints) if valid else None
         changed = valid and _routes_differ(prev_route, route)

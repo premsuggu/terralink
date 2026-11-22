@@ -7,7 +7,7 @@ can never see the inside of).
 
 This is a SEPARATE launch file from nav_sim.launch.py on purpose, not a
 branch inside it - per this project's own instruction, nav_sim.launch.py and
-the default planner_node/waypoint_follower/walkability/prm_planner BEHAVIOR
+the default planner_node/waypoint_follower/walkability BEHAVIOR
 must stay exactly as they were until this new capability is proven live
 (see docs/work-docs/nav/step05_frontier_tunnel_navigation.md's "prototype
 first" framing). Structurally, this file is a straight copy of
@@ -139,14 +139,6 @@ def generate_launch_description():
     )
     autonomous_uav = LaunchConfiguration('autonomous_uav')
 
-    # Which global planner answers get_plan: 'prm' (original, default) or
-    # 'astar' (deterministic grid planner with robot-size inflation, route
-    # memory and standoff points - see nav/astar_planner.py and
-    # docs/work-docs/nav/step07_astar_planner.md). Opt-in until verified live.
-    planner_type_arg = DeclareLaunchArgument(
-        'planner_type', default_value='prm',
-        description="Global planner: 'prm' (default) or 'astar'."
-    )
     anomaly_hold_sec_arg = DeclareLaunchArgument(
         'anomaly_hold_sec', default_value='0.0',
         description="Seconds a cell stays flagged anomalous after the detector last flagged it "
@@ -173,8 +165,8 @@ def generate_launch_description():
         'frontier_min_width_m', default_value='-1.0',
         description="Drop frontier cells whose unobserved region is thinner than this (meters). "
                     "A strip narrower than the UGV is not a passage; on a top-down map it is nearly "
-                    "always an unscanned thin wall top. Negative = automatic (UGV diameter for "
-                    "planner_type:=astar, off for prm); 0 = off; 0.44 = UGV width."
+                    "always an unscanned thin wall top. Negative = automatic (UGV diameter); "
+                    "0 = off; 0.44 = UGV width."
     )
     stuck_feedback_arg = DeclareLaunchArgument(
         'stuck_feedback', default_value='false',
@@ -374,7 +366,7 @@ def generate_launch_description():
 
     # enable_frontier_mode=true - the one node in the whole project meant to
     # actually plan through unconfirmed frontier cells (see
-    # nav.prm_planner/nav.walkability and this file's own top docstring).
+    # nav.astar_planner/nav.walkability and this file's own top docstring).
     planner_node = Node(
         package='nav',
         executable='planner_node',
@@ -385,7 +377,6 @@ def generate_launch_description():
         parameters=[{
             'enable_frontier_mode': True,
             'enable_anomaly_mode': True,
-            'planner_type': LaunchConfiguration('planner_type'),
             'enable_exploration': LaunchConfiguration('enable_exploration'),
             'stuck_progress_window_sec': ParameterValue(LaunchConfiguration('stuck_progress_window_sec'), value_type=float),
             'uncertain_waive_m': ParameterValue(LaunchConfiguration('uncertain_waive_m'), value_type=float),
@@ -454,10 +445,10 @@ def generate_launch_description():
                      'base_y': ParameterValue(LaunchConfiguration('base_y'), value_type=float),
                      'goals': LaunchConfiguration('mission_goals')}],
         condition=IfCondition(PythonExpression(["'", LaunchConfiguration('mission_goals'), "' != ''"])))
-    prm_waypoint_follower = Node(
+    ugv_waypoint_follower = Node(
         package='nav',
         executable='waypoint_follower',
-        name='prm_waypoint_follower',
+        name='ugv_waypoint_follower',
         parameters=[{
             'goal_x': LaunchConfiguration('goal_x'),
             'goal_y': LaunchConfiguration('goal_y'),
@@ -572,7 +563,7 @@ def generate_launch_description():
     ])
     nav_layer_group = TimerAction(period=9.0, actions=[nav2_launch, planner_node])
     follower_group = TimerAction(period=PythonExpression(['9.0 + ', LaunchConfiguration('follower_delay_sec')]),
-                                 actions=[prm_waypoint_follower])
+                                 actions=[ugv_waypoint_follower])
 
     return LaunchDescription([
         world_arg,
@@ -596,7 +587,6 @@ def generate_launch_description():
         goal_y_arg,
         map_snapshot_arg,
         start_follower_arg,
-        planner_type_arg,
         enable_exploration_arg,
         wait_for_mapping_arg,
         stuck_feedback_arg,

@@ -88,20 +88,12 @@ class TestBuildMasks:
 
 
 class TestRunPlanAndMetrics:
-    def test_astar_and_prm_both_solve_an_open_map(self):
+    def test_astar_solves_an_open_map_as_a_single_straight_segment(self):
         snap = _snapshot(_open())
         masks = replay.build_masks(snap)
-        for planner in ("astar", "prm"):
-            res = replay.run_plan(snap, masks, _xy(10, 10), _xy(45, 40), planner=planner)
-            assert res.valid
-
-    def test_astar_is_a_single_straight_segment_where_prm_zigzags(self):
-        snap = _snapshot(_open())
-        masks = replay.build_masks(snap)
-        a = replay.run_plan(snap, masks, _xy(10, 10), _xy(45, 40), planner="astar")
-        p = replay.run_plan(snap, masks, _xy(10, 10), _xy(45, 40), planner="prm")
+        a = replay.run_plan(snap, masks, _xy(10, 10), _xy(45, 40))
+        assert a.valid
         assert len(a.waypoints) == 2
-        assert len(p.waypoints) > 2
 
     def test_explore_falls_back_to_a_viewpoint_when_there_is_no_route(self):
         w = np.zeros((N, N), dtype=bool)
@@ -211,14 +203,6 @@ class TestReplaySequence:
         assert all(s.valid for s in steps)
         # only the first plan counts as a "change"
         assert sum(s.route_changed for s in steps) <= 2
-
-    def test_prm_changes_the_route_more_than_astar_on_the_same_frames(self):
-        snaps = self._frames(8)
-        kw = dict(use_frontier=False, use_anomaly=False)
-        starts = [_xy(30, 5)] * len(snaps)
-        astar = replay.replay_sequence(snaps, list(range(8)), starts, _xy(30, 55), planner="astar", **kw)
-        prm = replay.replay_sequence(snaps, list(range(8)), starts, _xy(30, 55), planner="prm", **kw)
-        assert sum(s.route_changed for s in astar) <= sum(s.route_changed for s in prm)
 
     def test_failed_steps_are_reported_not_hidden(self):
         w = _open()

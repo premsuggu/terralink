@@ -55,7 +55,7 @@ def main():
     G = ElevationMap(res, n * res, 10.0); G.center_x, G.center_y = cx, cy
     driven = []
     for name, g in goals:
-        r = run_plan(snap, masks, start, g, planner="astar", params=astar_planner.PlannerParams())
+        r = run_plan(snap, masks, start, g, params=astar_planner.PlannerParams())
         if r.valid and len(r.waypoints) > 1:
             route = np.asarray(r.waypoints, float)
             driven.append(name)

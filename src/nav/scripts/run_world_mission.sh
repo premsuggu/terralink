@@ -15,7 +15,7 @@ PAT='safety_node|mission_node|ros2 launch|ign gazebo|gz sim|parameter_bridge|sta
 pgrep -af "$PAT" | grep -v pgrep | awk '{print $1}' | xargs -r kill -9; sleep 2
 rm -rf "${OUT:?}"; mkdir -p "$OUT"
 ros2 launch nav tunnel_demo.launch.py world:=${W}_scan.world nav2_params:=nav2_params_large.yaml headless:=true autonomous_uav:=true \
-    patrol_file:=${W}_patrol.txt global_map_length:=$GML uav_dwell_sec:=0.3 emap_point_stride:=${EMAP_STRIDE:-16} max_roughness:=${MAX_ROUGH:-0.5} drift_compensation:=false planner_type:=astar \
+    patrol_file:=${W}_patrol.txt global_map_length:=$GML uav_dwell_sec:=0.3 emap_point_stride:=${EMAP_STRIDE:-16} max_roughness:=${MAX_ROUGH:-0.5} drift_compensation:=false  \
     enable_exploration:=true overhead_islands:=true anomaly_hold_sec:=30.0 stuck_feedback:=true start_follower:=false goal_x:=$GX goal_y:=$GY ${EXTRA:-} > "$OUT/launch.log" 2>&1 &
 # 1. wait for the UAV to reach the end of its patrol
 until p=$(timeout 8 ros2 topic echo --once /odom --field pose.pose.position 2>/dev/null | tr '\n' ' '); \
@@ -30,7 +30,7 @@ cp "$OUT/${W}_uavscan.npz" "src/nav/maps/${W}_uavscan.npz"      # a copy is kept
 python3 src/nav/scripts/record_world_run.py --out "$OUT/rec" --goal "$GX" "$GY" --max-sim-sec "${MAX_SIM:-900}" > "$OUT/rec.log" 2>&1 &
 REC=$!
 sleep 3
-ros2 run nav waypoint_follower --ros-args -r __node:=prm_waypoint_follower -p goal_x:=$GX -p goal_y:=$GY -p use_sim_time:=false \
+ros2 run nav waypoint_follower --ros-args -r __node:=ugv_waypoint_follower -p goal_x:=$GX -p goal_y:=$GY -p use_sim_time:=false \
     -p enable_frontier_replan:=true -p enable_voxel_verification:=true -p enable_anomaly_replan:=true -p enable_stuck_recovery:=true -p enable_blocked_replan:=true > "$OUT/follower.log" 2>&1 &
 wait $REC
 pgrep -af "$PAT" | grep -v pgrep | awk '{print $1}' | xargs -r kill -9

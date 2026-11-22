@@ -86,7 +86,7 @@ def main():
     snap = MapSnapshot(layers={"elevation": em.layer("elevation").copy(), "variance": em.layer("variance").copy(),
                                "is_valid": em.layer("is_valid").copy(), "traversability": before.tier.astype(np.float32)},
                        resolution=res, center_x=cx, center_y=cy)
-    r = run_plan(snap, build_masks(snap), start, goal, planner="astar", params=astar_planner.PlannerParams())
+    r = run_plan(snap, build_masks(snap), start, goal, params=astar_planner.PlannerParams())
     if not (r.valid and len(r.waypoints) > 1):
         print("no route on the UAV map"); return
     route = np.asarray(r.waypoints, float)

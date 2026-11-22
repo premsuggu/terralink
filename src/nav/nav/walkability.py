@@ -72,7 +72,7 @@ def compute_frontier_mask(
     (the UAV's camera literally never gets a return from that ground), no
     matter how long or how thoroughly the area around it gets scanned. Under
     the existing walkable/non-walkable split, that's indistinguishable from a
-    solid wall - `nav.prm_planner` can never route through it even when it's
+    solid wall - `nav.astar_planner` can never route through it even when it's
     the ONLY way across (see docs/work-docs/nav/step05_frontier_tunnel_navigation.md
     for the full scenario this was built to address).
 
@@ -80,7 +80,7 @@ def compute_frontier_mask(
     opposite: "unknown, but reachable, and worth physically investigating"
     (as opposed to unknown cells buried deep in never-approached space, which
     stay excluded exactly as before - only genuinely reachable unknowns
-    become frontier). `nav.prm_planner.plan`'s `allow_frontier` option is
+    become frontier). the planner's `allow_frontier` option is
     what actually decides whether a planner is willing to tentatively route
     through a frontier cell; this function only IDENTIFIES which cells
     qualify, so a caller that never opts in to `allow_frontier` sees no

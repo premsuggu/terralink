@@ -8,8 +8,8 @@ voxel structure: it already solves the hard parts correctly (probabilistic
 per-voxel occupancy fusion via log-odds, ray casting so a "no return" beam
 correctly marks the space it passed through as free, and octree sparsity so
 empty/unknown regions don't cost memory) - this project's own precedent is
-"reuse a proven algorithm rather than reinvent it" (see `prm_planner.py`'s
-own docstring re: d3's PRM, or `emap`'s "reference `src/d1 (since removed; last present in commit 8a86dab)`, don't rebuild
+"reuse a proven algorithm rather than reinvent it" (see `astar_planner.py`'s
+own docstring, or `emap`'s "reference `src/d1 (since removed; last present in commit 8a86dab)`, don't rebuild
 its ideas from scratch").
 
 REAL ENVIRONMENT CONSTRAINT FOUND LIVE while building this: the plan
@@ -25,7 +25,7 @@ no such requirement - `pip install --user octomap` works with no elevated
 privileges. This module uses that binding directly and does the
 insertion/eviction bookkeeping in-process instead of over a ROS service,
 which is a BETTER fit for this codebase's own style anyway: every other
-`emap`/`nav` algorithm module (see `fusion.py`, `prm_planner.py`,
+`emap`/`nav` algorithm module (see `fusion.py`, `astar_planner.py`,
 `walkability.py`) is a pure-Python/NumPy core wrapped by a thin ROS node,
 not a call out to an external node written by someone else with its own
 service contract to track.
@@ -188,7 +188,7 @@ class BoundedVoxelMap:
 
 
 # step06 Phase 4: the actual "go check ground truth before crossing" logic.
-# `nav.prm_planner`'s anomaly/frontier mechanism (Phase 3, step05) already
+# `nav.astar_planner`'s anomaly/frontier mechanism (Phase 3, step05) already
 # returns a TENTATIVE path across a region the 2.5D map couldn't confirm -
 # but a tentative path is still just a hopeful guess until something
 # actually looks. These two functions are that look: given this map's
@@ -199,7 +199,7 @@ class BoundedVoxelMap:
 # BoundedVoxelMap) so they're unit-testable against a synthetic dict-backed
 # fake with no OcTree/OctoMap dependency at all - same "pure core, thin
 # wrapper" split as every other algorithm module in this project
-# (`nav.walkability`, `nav.prm_planner`, `nav.anomaly` all separate the
+# (`nav.walkability`, `nav.astar_planner`, `nav.anomaly` all separate the
 # decision logic from whatever produces its inputs).
 def check_column_headroom(
     query_fn,
