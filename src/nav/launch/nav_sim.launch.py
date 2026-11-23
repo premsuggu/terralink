@@ -252,13 +252,27 @@ def generate_launch_description():
         package='nav',
         executable='planner_node',
         name='planner_node',
+        # stuck_feedback: if the UGV is handed a route and then does not move, the planner drops its stored route and penalises the
+        # stretch ahead, so the follower's next request gets a DIFFERENT route. Without it a deterministic planner returns the same
+        # (wrong) route forever. Why this launch needs it (R-06, step15 doc): the maze walls are 1-2 cells thick, so while the UAV is
+        # still scanning, some wall cells read as floor; A* answers as soon as ANY route exists and that can be a route through such a
+        # false opening, which Nav2's lidar costmap then refuses to drive.
+        parameters=[{'stuck_feedback': True}],
         output='screen',
     )
     ugv_waypoint_follower = Node(
         package='nav',
         executable='waypoint_follower',
         name='ugv_waypoint_follower',
-        parameters=[{'goal_x': LaunchConfiguration('goal_x'), 'goal_y': LaunchConfiguration('goal_y')}],
+        parameters=[{
+            'goal_x': LaunchConfiguration('goal_x'),
+            'goal_y': LaunchConfiguration('goal_y'),
+            # Ask for a fresh plan after 20 s without progress (pairs with the planner's stuck_feedback above), and as soon as the
+            # planner reports that the plan it handed out now crosses cells the map knows are blocked. Same options the world run
+            # scripts and tunnel_demo.launch.py already use.
+            'enable_stuck_recovery': True,
+            'enable_blocked_replan': True,
+        }],
         output='screen',
     )
     uav_autopilot_node = Node(

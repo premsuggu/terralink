@@ -28,7 +28,7 @@ setup(
     data_files=[
         ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-    ] + files_by_dir('launch', 'worlds', 'config', 'models', 'description', 'maps'),
+    ] + files_by_dir('launch', 'worlds', 'config', 'models', 'description', 'maps', 'studio_web'),
     install_requires=['setuptools'],
     zip_safe=True,
     maintainer='TerraLink nav',
@@ -46,6 +46,7 @@ setup(
             'map_replay_node = nav.map_replay_node:main',
             'safety_node = nav.safety_node:main',
             'mission_node = nav.mission_node:main',
+            'studio_node = nav.studio.studio_node:main',
         ],
     },
 )

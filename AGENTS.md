@@ -76,6 +76,7 @@ terralink/
             ├── planner_node.py        # global planner ROS node (A*)
             ├── waypoint_follower.py   # UGV waypoint following
             ├── safety.py / safety_node.py     # safety layer (S-01/S-02), opt-in
+            ├── studio/                # TerraLink Studio backend: protocol, commands (limits, dead-man, take-off), scenery (world boxes for the page), tornado server, studio_node (+ ../studio_web/ three.js app, ../launch/studio.launch.py)
             ├── mission.py / mission_node.py   # mission layer (S-03), opt-in
             └── walkability.py         # Traversability analysis
 See `docs/work-docs/emap/IMPLEMENTATION_PLAN.md` for the step-by-step build history.
@@ -159,6 +160,7 @@ Full details in `docs/work-docs/nav/IMPLEMENTATION_PLAN.md` and per-step docs.
 | `map_replay_node` | nav | Publishes a saved map as `/elevation_map` (start-at-planning mode) |
 | `uav_autopilot_node` | nav | UAV autopilot ROS node |
 | `waypoint_follower` | nav | UGV waypoint following |
+| `studio_node` | nav | TerraLink Studio server: web page + websocket, UAV/UGV commands with limits/dead-man/e-stop, map + plan streaming. Normally started by `ros2 launch nav studio.launch.py [map:=live\|uavview\|groundtruth]` (simulator + stack + server), page at http://localhost:8765 |
 | `safety_node` | nav | Opt-in (`enable_safety:=true`): geofence / tilt / obstacle stop gate on the UGV velocity, driving-budget return, UAV-link-loss flag |
 | `mission_node` | nav | Opt-in (`mission_goals:=x1,y1,...`): goal list / patrol / return to base, one goal at a time to `waypoint_follower` |
 
@@ -204,6 +206,8 @@ All algorithm-level tests (fusion, GPU fusion, drift compensation, traversabilit
 | `docs/work-docs/nav/step12_exploration.md` | nav: existing exploration solutions tested offline against ours (freespace assumption / Nav2 `allow_unknown`, explore_lite's frontier rule; TARE not tested, why), the simulator's pluggable policy + ground-layer model (`scripts/eval_exploration.py`), the ground-layer-disables-island-rule bug (fixed), results on W1-W5, freespace adopted (`island_strategy:=freespace`), ground-layer confidence gate, two live W4 room-B runs (not reached: camera false obstacles at doors) |
 | `docs/work-docs/nav/step13_exploration_wallfollow.md` | nav: the user's wall-following/backtracking idea tested offline (Bug1, Bug2, lidar exit list best-first/DFS) with and without a UAV map; without one, freespace and the exit list reach 10/10 goals vs today's 7/10; proposals |
 | `docs/work-docs/nav/step14_finalisation.md` | nav/emap: the finalisation round - what was kept (no-UAV freespace, drift fix, safety + mission layers) and what was discarded (unknown cost 1.5, flying-pixel filter) with the numbers; C-07 rubble measurement; the live W2 mission |
+| `docs/work-docs/nav/step15_prm_removal.md` | nav: PRM planner removed (A* only); the maze stall (R-06): cause, fix and its 8-run measurement |
+| `docs/work-docs/nav/step16_studio_server.md` | nav: TerraLink Studio (P1 backend, P2-P4 browser viewer, controls, goal/plan, saved-map mode): architecture, protocol, measured simulator facts, what was and was not tested, bugs found |
 | `media/missions/`, `media/terrain/` | pictures/videos: the W2 mission run (goal list, safety gate, return to base); the rubble-lane measurement |
 | `media/exploration/README.md` | pictures: each exploration strategy's path to one goal (offline simulator) |
 | `media/classification/README.md` | pictures: ground-truth cell classes vs the old and new rules on simulated and real UAV scans, all worlds, with scores |

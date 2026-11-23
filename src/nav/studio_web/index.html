@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TerraLink Studio</title>
+<link rel="stylesheet" href="style.css">
+</head><body>
+
+<!-- ============================================================ top bar: who/where we are, link health -->
+<header id="topbar">
+  <div class="brand"><span class="logo">◈</span> TerraLink <b>Studio</b></div>
+  <span id="chip-site" class="tag" title="The simulated site">–</span>
+  <span id="chip-source" class="tag" title="Where the elevation map comes from">map: –</span>
+  <span class="spacer"></span>
+  <span id="chip-time" class="tag" title="Simulation time, and speed relative to real time (x1.00 = real time)">sim 0 s</span>
+  <span id="chip-fps" class="tag" title="Drawing speed of this page (frames per second)">– fps</span>
+  <span id="chip-conn" class="tag bad" title="Link to the studio server"><i class="dot"></i><span>connecting…</span></span>
+  <button id="btn-help" class="btn ghost" title="How to use the studio (H)">? Help</button>
+</header>
+
+<div id="app">
+  <!-- ============================================================ side panel: everything you can do, in order of use -->
+  <aside id="side">
+   <div id="side-scroll">
+    <section class="card coach" id="coach" data-tone="info">
+      <div class="eyebrow" id="coach-eyebrow">NEXT STEP</div>
+      <div class="coach-title" id="coach-title">Connecting…</div>
+      <div class="coach-body" id="coach-body"></div>
+      <button id="coach-action" class="btn primary" hidden></button>
+    </section>
+
+    <section class="card">
+      <h3>1 · Fly &amp; drive</h3>
+      <div class="field">
+        <span class="lbl">You control</span>
+        <div class="seg" id="seg-target">
+          <button data-target="uav" class="on" title="Fly the UAV (Y button switches)">UAV</button>
+          <button data-target="ugv" title="Drive the UGV by hand; the planner is paused (Y button switches)">UGV by hand</button>
+        </div>
+      </div>
+      <div class="field live-only">
+        <button id="btn-takeoff" class="btn wide" title="The UAV climbs by itself to 6 m. Any climb/descend input takes over.">⬆ Take off (6 m)</button>
+      </div>
+      <div class="field live-only">
+        <button id="btn-autoscan" class="btn wide" title="The UAV sweeps the whole site by itself (slow and low, for a clean map). Any stick input or the e-stop stops it.">⟳ Auto-scan the site</button>
+      </div>
+      <div class="field">
+        <label class="lbl" for="rng-speed">Speed</label>
+        <input id="rng-speed" type="range" min="0.2" max="1" step="0.05" value="0.7">
+        <span class="val" id="val-speed">70%</span>
+      </div>
+      <div class="keys" id="keys-uav">
+        <kbd>W</kbd><kbd>S</kbd> forward/back · <kbd>A</kbd><kbd>D</kbd> sideways · <kbd>R</kbd><kbd>F</kbd> up/down · <kbd>Q</kbd><kbd>E</kbd> turn · hold <kbd>Shift</kbd> to go slowly
+      </div>
+      <div class="keys" id="keys-ugv" hidden>
+        <kbd>W</kbd><kbd>S</kbd> drive forward/back · <kbd>A</kbd><kbd>D</kbd> steer · hold <kbd>Shift</kbd> to go slowly
+      </div>
+    </section>
+
+    <section class="card">
+      <h3>2 · Send the UGV somewhere</h3>
+      <div class="btn-row">
+        <button id="btn-goal" class="btn" title="Then click a green spot on the map (G)">⚑ Set goal</button>
+        <button id="btn-cancel" class="btn" title="Forget the goal and stop the UGV (Esc)">✕ Cancel</button>
+      </div>
+      <div class="mission" id="mission">No goal yet.</div>
+    </section>
+
+    <section class="card">
+      <h3>View</h3>
+      <div class="field">
+        <span class="lbl">Layout</span>
+        <div class="seg" id="seg-layout">
+          <button data-layout="single" title="One big view">1 view</button>
+          <button data-layout="inset" class="on" title="Big view + small map">+ map</button>
+          <button data-layout="quad" title="Four views at once">4 views</button>
+        </div>
+      </div>
+      <div class="field">
+        <span class="lbl">Camera follows</span>
+        <div class="seg" id="seg-follow">
+          <button data-follow="none" class="on" title="The orbit camera stays where you put it">nothing</button>
+          <button data-follow="ugv" title="The orbit camera stays on the UGV">UGV</button>
+          <button data-follow="uav" title="The orbit camera stays on the UAV">UAV</button>
+        </div>
+      </div>
+      <div class="field">
+        <span class="lbl">Map colours</span>
+        <div class="seg" id="seg-colour">
+          <button data-colour="height" class="on" title="Colour by height">height</button>
+          <button data-colour="drivable" title="Green = the planner will drive here, red = blocked">drivable</button>
+          <button data-colour="plain" title="One colour, shading only">plain</button>
+        </div>
+      </div>
+      <label class="check" title="The boxes of the real site (containers, fences). Only you see them: the robots know just what they have scanned."><input type="checkbox" id="opt-world" checked> Real site <span class="hint">(boxes)</span></label>
+      <label class="check" title="The elevation map built from the UAV's scans: what the robots actually know."><input type="checkbox" id="opt-scanned" checked> Scanned map</label>
+      <label class="check"><input type="checkbox" id="opt-trails" checked> Trails</label>
+      <label class="check" title="The ground area the UAV's camera sees right now"><input type="checkbox" id="opt-footprint" checked> Camera view</label>
+      <div class="field">
+        <label class="lbl" for="rng-scale" title="The robots are tiny on a 60 m site, so they are drawn bigger">Robot size</label>
+        <input id="rng-scale" type="range" min="1" max="8" step="0.5" value="4">
+        <span class="val" id="val-scale">×4</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h3>Settings <span class="hint">(limits enforced by the server)</span></h3>
+      <div class="field">
+        <span class="lbl">Preset</span>
+        <div class="seg" id="seg-preset">
+          <button data-preset="gentle" title="Slow and careful: best for a clean scan">gentle</button>
+          <button data-preset="normal" title="The defaults">normal</button>
+          <button data-preset="fast" title="Quick, but scans get speckled">fast</button>
+        </div>
+      </div>
+      <div class="field"><label class="lbl" for="set-max_xy">UAV speed</label><input id="set-max_xy" data-set="max_xy" type="range" step="0.25"><span class="val wide" id="val-max_xy"></span></div>
+      <div class="field"><label class="lbl" for="set-max_z">UAV climb</label><input id="set-max_z" data-set="max_z" type="range" step="0.1"><span class="val wide" id="val-max_z"></span></div>
+      <div class="field"><label class="lbl" for="set-max_yaw">UAV turn</label><input id="set-max_yaw" data-set="max_yaw" type="range" step="0.1"><span class="val wide" id="val-max_yaw"></span></div>
+      <div class="field"><label class="lbl" for="set-ceiling">Ceiling</label><input id="set-ceiling" data-set="ceiling" type="range" step="0.5"><span class="val wide" id="val-ceiling"></span></div>
+      <div class="field"><label class="lbl" for="set-ugv_max_lin">UGV speed</label><input id="set-ugv_max_lin" data-set="ugv_max_lin" type="range" step="0.1"><span class="val wide" id="val-ugv_max_lin"></span></div>
+      <div class="field"><label class="lbl" for="set-ugv_max_ang">UGV turn</label><input id="set-ugv_max_ang" data-set="ugv_max_ang" type="range" step="0.1"><span class="val wide" id="val-ugv_max_ang"></span></div>
+      <div class="note dimnote">Limits apply to hand-flying/driving. The route-following UGV uses Nav2's own speed.</div>
+    </section>
+
+    <section class="card status">
+      <h3>Status</h3>
+      <div class="row"><span class="lbl">UAV</span><span id="hud-uav">–</span></div>
+      <div class="row"><span class="lbl">UGV</span><span id="hud-ugv">–</span></div>
+      <div class="row"><span class="lbl">Goal</span><span id="hud-goal">–</span></div>
+      <div class="row"><span class="lbl">Cursor</span><span id="hud-cursor">–</span></div>
+      <div class="row"><span class="lbl">Scanned</span><span id="chip-map">0 m²</span></div>
+      <div class="row"><span class="lbl">Controller</span><span id="chip-pad">none – press a button</span></div>
+      <div id="limit-note" class="note" hidden>A flight limit (floor, ceiling or site edge) is holding the UAV back.</div>
+    </section>
+
+   </div>
+   <!-- pinned below the scrolling cards so it is ALWAYS on screen -->
+   <div id="side-foot"><button id="btn-estop" class="btn danger" title="Stops the UAV and the hand-driven UGV at once AND cancels the UGV's goal. Space toggles; B stops and A releases on the controller.">■ EMERGENCY STOP <small>Space</small></button></div>
+  </aside>
+
+  <!-- ============================================================ the 3D views -->
+  <main id="stage">
+    <canvas id="gl"></canvas>
+    <div id="panes"></div>
+    <div id="banner" hidden></div>
+    <div id="toast"></div>
+    <div id="legend" class="legend">
+      <span class="sw sw-uav"></span>UAV <span class="sw sw-ugv"></span>UGV <span class="sw sw-scan"></span>scanned <span class="sw sw-world"></span>real site <span class="sw sw-plan"></span>route
+    </div>
+    <aside id="log" title="Messages from the studio"></aside>
+  </main>
+</div>
+
+<!-- ============================================================ help -->
+<div id="help" hidden>
+  <div class="card sheet">
+    <h2>How to use TerraLink Studio</h2>
+    <ol class="steps">
+      <li><b>Take off and scan.</b> Press <b>Take off</b>, then fly the UAV over the ground the UGV must cross. The map appears under the UAV. <i>(With a saved map there is nothing to scan: skip to step 2.)</i></li>
+      <li><b>Pick a goal.</b> Press <b>Set goal</b> (or <kbd>G</kbd>), then click a <b style="color:var(--good)">green</b> spot in any view. The UGV plans a route and drives there by itself.</li>
+      <li><b>Watch.</b> Use the views (the menu in each view's corner) to follow the action: free orbit, top-down map, behind or inside either robot.</li>
+    </ol>
+    <div class="cols">
+      <div>
+        <h3>Xbox-style controller</h3>
+        <p>Plug it into Windows, then <b>press any button</b> once so the browser notices it.</p>
+        <ul>
+          <li><b>Left stick</b>: up/down climb/descend, left/right turn</li>
+          <li><b>Right stick</b>: fly forward/back and sideways</li>
+          <li><b>LT</b> (hold): slow, precise mode</li>
+          <li><b>B</b> emergency stop · <b>A</b> release it</li>
+          <li><b>Y</b>: switch UAV ⇄ UGV by hand</li>
+          <li><b>LB / RB</b>: previous / next view · <b>Start</b>: layout · <b>Back</b>: goal tool</li>
+        </ul>
+        <p>UGV by hand: left stick up/down drives, right stick left/right steers.</p>
+      </div>
+      <div>
+        <h3>Keyboard &amp; mouse</h3>
+        <ul>
+          <li><kbd>W</kbd><kbd>S</kbd><kbd>A</kbd><kbd>D</kbd> fly forward/back/left/right · <kbd>R</kbd><kbd>F</kbd> up/down · <kbd>Q</kbd><kbd>E</kbd> turn</li>
+          <li><kbd>Shift</kbd> slow mode · <kbd>Space</kbd> emergency stop / release</li>
+          <li><kbd>G</kbd> goal tool, then click · <kbd>Esc</kbd> cancel · <kbd>M</kbd> UAV ⇄ UGV by hand</li>
+          <li><kbd>1</kbd>–<kbd>7</kbd> change the main view · <kbd>L</kbd> layout · <kbd>H</kbd> this help</li>
+          <li>Orbit view: drag rotates · right-drag or Shift-drag pans · wheel zooms</li>
+          <li>Top view: drag pans · wheel zooms</li>
+        </ul>
+      </div>
+    </div>
+    <p class="note">Safety: the UAV stops by itself if this page stops talking to it (closed tab, lost link), cannot leave the site or fly outside its height limits, and the emergency stop also cancels the UGV's goal. The simulator runs at roughly half real time on this machine, so everything reacts slowly.</p>
+    <button id="btn-help-close" class="btn primary">Got it</button>
+  </div>
+</div>
+
+<script src="vendor/three.min.js"></script>
+<script type="module" src="js/app.js"></script>
+</body></html>

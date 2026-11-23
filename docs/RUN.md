@@ -62,6 +62,25 @@ python3 src/nav/scripts/render_run_trace.py compare --group "PRM=runs/p1,runs/p2
 ```
 Images from the 12 runs of step 08 are in `media/figures/path_comparison/`; details in `docs/work-docs/nav/step08_path_trace_images.md`.
 
+## Studio (browser front end: fly the UAV, see the map, give the UGV a goal)
+
+```bash
+colcon build --packages-select nav && source install/local_setup.bash
+ros2 launch nav studio.launch.py                  # live: you fly the UAV, the map is what you scan
+ros2 launch nav studio.launch.py map:=uavview     # saved map: skip the scan and go straight to planning ("map:=groundtruth" = oracle map,
+                                                  #   or map:=/path/to/snapshot.npz)
+# then open http://localhost:8765 (a Windows browser works through WSL2's localhost forwarding; use `localhost`, not the WSL IP)
+#   if forwarding fails:  ros2 launch nav studio.launch.py host:=0.0.0.0   (listens on the network - trusted networks only)
+```
+The page opens with a short how-to and a **"next step" box** (top of the side panel) that always says what to do: Take off -> scan -> Set goal -> watch. In live mode the real site's boxes (containers, fences) are drawn from the start; the scanned map is drawn over them (switch either off under *View*). The red E-STOP button is pinned at the bottom of the panel.
+Keys: `W S A D` fly / `R F` up-down / `Q E` turn, the *Take off* button climbs to 6 m, `G` then click = send the UGV there, `Space` = e-stop (UAV, manual UGV, and it cancels the UGV's goal), `M` = drive the UGV yourself, `1`-`7` views,
+`L` layout, `H` help. Xbox pad: plug it into Windows and press a button once; left stick = climb/turn, right stick = fly, B = e-stop, A = release,
+Y = UAV/UGV, LT = slow. In live mode scan the UGV's own spot and the way to the goal first, or the planner answers "no route".
+The page is served by `studio_node` (also runnable alone: `ros2 run nav studio_node`). World file: `worlds/w2_container_yard_studio.world`
+(made once by `python3 src/nav/scripts/make_studio_world.py w2_container_yard`). Checks: `tests/nav/integration/studio_live.py` (backend, needs the sim),
+`tests/nav/integration/studio_browser.py` (page from a saved map) and `studio_firstrun_browser.py` (the live-scan first-run experience; needs the pretend backend with `--live`). Both need Playwright; the docstrings explain how, and the pretend backend needs no simulator.
+Details and measurements: `docs/work-docs/nav/step16_studio_server.md`. The simulator runs at about 0.4-0.6x real time here.
+
 ## Tests
 
 ```bash

@@ -390,6 +390,7 @@ def generate_launch_description():
             'wait_for_mapping': LaunchConfiguration('wait_for_mapping'),
             'stuck_feedback': LaunchConfiguration('stuck_feedback'),
             'frontier_min_width_m': ParameterValue(LaunchConfiguration('frontier_min_width_m'), value_type=float),
+            'footprint_radius_m': ParameterValue(LaunchConfiguration('footprint_radius_m'), value_type=float),
         }],
         output='screen',
     )
@@ -427,6 +428,8 @@ def generate_launch_description():
         DeclareLaunchArgument('mission_loops', default_value='1', description='Patrol laps (0 = forever).'),
         DeclareLaunchArgument('base_x', default_value='0.0', description='Return-to-base X.'),
         DeclareLaunchArgument('base_y', default_value='0.0', description='Return-to-base Y.'),
+        DeclareLaunchArgument('footprint_radius_m', default_value='0.3', description="astar: cells within this distance of the UGV are treated as free (its own body pollutes the UAV map). 0.3 is the long-standing default; the studio uses 0.5 because a UAV flown by hand over the parked UGV paints a blocked ring ~0.4 m out that the 0.3 m circle never touches (step 16)."),
+        DeclareLaunchArgument('studio', default_value='false', description='TerraLink Studio: the follower waits idle for a goal on /mission/goal (set by studio.launch.py).'),
     ]
     safety_node = Node(
         package='nav', executable='safety_node', name='safety_node', output='screen',
@@ -456,7 +459,10 @@ def generate_launch_description():
             'enable_voxel_verification': True,
             'enable_anomaly_replan': True,
             'enable_stuck_recovery': True,
-            'goal_topic': PythonExpression(["'/mission/goal' if '", LaunchConfiguration('mission_goals'), "' != '' else ''"]),
+            # TerraLink Studio (studio:=true): take goals from /mission/goal like the mission layer does, but stay idle until the first one
+            # arrives (the person picks it in the browser after looking at the map) instead of driving to goal_x/goal_y at once.
+            'goal_topic': PythonExpression(["'/mission/goal' if ('", LaunchConfiguration('mission_goals'), "' != '' or '", LaunchConfiguration('studio'), "' == 'true') else ''"]),
+            'wait_for_goal': ParameterValue(LaunchConfiguration('studio'), value_type=bool),
         }],
         output='screen',
         condition=IfCondition(LaunchConfiguration('start_follower')),

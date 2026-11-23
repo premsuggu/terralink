@@ -150,7 +150,7 @@ from tf2_ros import LookupException, ConnectivityException, ExtrapolationExcepti
 from nav_msgs.msg import Odometry
 from nav_msgs.srv import GetPlan
 from geometry_msgs.msg import PoseStamped
-from std_msgs.msg import Bool, Float64MultiArray, String
+from std_msgs.msg import Bool, Empty, Float64MultiArray, String
 
 
 def _should_replan(now: float, last_replan_time: float | None, interval_sec: float) -> bool:
@@ -415,6 +415,9 @@ class WaypointFollower(Node):
         # replaces goal_x/goal_y and restarts planning. "" = off (the fixed goal above, the old behaviour). If the planner finds no
         # route to the goal `goal_failed_after` times in a row, /mission/goal_failed (Bool) tells the mission to skip it.
         self.declare_parameter("goal_topic", "")
+        # TerraLink Studio (opt-in, default False = unchanged): with a goal_topic, stay IDLE (no plan requests, no driving) until the first
+        # goal arrives on it, instead of heading for goal_x/goal_y straight away. "/mission/cancel" (std_msgs/Empty) returns to idle.
+        self.declare_parameter("wait_for_goal", False)
         self.declare_parameter("goal_failed_after", 8)
         self.declare_parameter("waypoint_reached_radius_m", 0.5)
         self.declare_parameter("plan_frame", "iris_quad/odom")
@@ -613,6 +616,10 @@ class WaypointFollower(Node):
         if goal_topic:
             self._mission_goal_sub = self.create_subscription(PoseStamped, goal_topic, self._mission_goal_callback, 10)
         self._goal_pub = self.create_publisher(PoseStamped, "/goal_pose", 10)
+        # Idle until told where to go (see the wait_for_goal parameter). Only meaningful together with a goal topic.
+        self._idle = bool(self.get_parameter("wait_for_goal").value) and bool(goal_topic)
+        if self._idle:
+            self.create_subscription(Empty, "/mission/cancel", self._cancel_callback, 10)
         self._plan_client = self.create_client(GetPlan, "get_plan")
         self._frontier_sub = self.create_subscription(Bool, "plan_has_frontier", self._frontier_callback, 10)
         self._anomaly_plan_sub = self.create_subscription(Bool, "plan_has_anomaly", self._anomaly_callback, 10)
@@ -639,12 +646,32 @@ class WaypointFollower(Node):
         if abs(gx - self._goal_x) < 1e-3 and abs(gy - self._goal_y) < 1e-3:
             return
         self.get_logger().info(f"mission goal -> ({gx:.2f}, {gy:.2f}); re-planning from scratch.")
+        self._idle = False          # a goal wakes an idle follower (wait_for_goal)
         self._goal_x, self._goal_y = gx, gy
         self._waypoints = None
         self._next_index = 0
         self._no_plan_count = 0
         self._requested = False
         self._last_request_time = None
+
+    def _cancel_callback(self, _msg) -> None:
+        """Studio "cancel goal": forget the route and stop. Nav2 is told to go to where the robot already is, which halts it."""
+        self.get_logger().info("goal cancelled - idle until the next goal.")
+        self._idle = True
+        self._waypoints = None
+        self._next_index = 0
+        self._requested = False
+        # Forget the goal itself: `_mission_goal_callback` ignores a goal equal to the stored one (mission_node repeats its goal every second),
+        # so without this the SAME spot clicked again after a cancel (or after driving by hand) would be ignored and the UGV would stay idle.
+        # Comparisons with NaN are always false, so the next goal of any value is accepted.
+        self._goal_x = self._goal_y = float("nan")
+        if self._current_xy is not None:
+            stop = PoseStamped()
+            stop.header.frame_id = str(self.get_parameter("plan_frame").value)
+            stop.header.stamp = self.get_clock().now().to_msg()
+            stop.pose.position.x, stop.pose.position.y = float(self._current_xy[0]), float(self._current_xy[1])
+            stop.pose.orientation.w = 1.0
+            self._goal_pub.publish(stop)
 
     def _plan_blocked_callback(self, msg: Bool) -> None:
         """planner_node says the plan we are driving now crosses known-blocked cells (see enable_blocked_replan)."""
@@ -793,6 +820,9 @@ class WaypointFollower(Node):
             return
         self._current_xy = current_xy
 
+        if self._idle:
+            return          # wait_for_goal: nothing to do until a goal arrives
+
         if not self._requested:
             now = time.monotonic()
             if self._last_request_time is not None and now - self._last_request_time < self._retry_interval_sec:
@@ -879,6 +909,8 @@ class WaypointFollower(Node):
         self._goal_pub.publish(pose)
 
     def _request_plan(self) -> None:
+        if self._idle:
+            return          # wait_for_goal: a stray replan trigger must not start the robot driving
         if not self._plan_client.wait_for_service(timeout_sec=0.0):
             self.get_logger().info("get_plan service not up yet - will retry on the next odom message.")
             self._requested = False

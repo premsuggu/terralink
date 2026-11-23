@@ -64,6 +64,14 @@ ros2 launch nav nav_sim.launch.py   # headless by default; headless:=false for G
 
 ---
 
+## TerraLink Studio (browser: fly the UAV, see the map, send the UGV)
+
+```bash
+ros2 launch nav studio.launch.py                # you fly the UAV (keyboard or Xbox pad) and the map is what you scan
+ros2 launch nav studio.launch.py map:=uavview   # skip the scan: a saved map, straight to planning and driving
+# open http://localhost:8765  (H = help). Details: docs/RUN.md and docs/work-docs/nav/step16_studio_server.md
+```
+
 ## Quick Start
 
 Full one-time setup: `docs/SETUP.md`. Run commands: `docs/RUN.md`.
